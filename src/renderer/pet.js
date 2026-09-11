@@ -7,7 +7,7 @@ const modelUrl = filename => renderModel.assetBase + encodeURIComponent(filename
 let app, pet, world, envelope, renderModel, fit = 1, direction = 1, bubbleTimer;
 let prefs = { paused: false, visible: true, wander: true }, pose = 'default', dragging = false, pointerPressed = false;
 let actionMap = {}, idleBounds, displayReady = false, animated = false, hitElapsed = 0, lastHitSignature = '', lastPetRect = '';
-const voicePlayer = new window.ArkPetVoice(say, (modelId, message) => bridge.voiceError(modelId, message));
+const voicePlayer = new window.ArkPetVoice(data => bridge.voiceCaption(data), (modelId, message) => bridge.voiceError(modelId, message));
 
 function say(text, duration = 3200) {
   clearTimeout(bubbleTimer);
@@ -28,12 +28,12 @@ function play(action) {
   if (displayReady) { app.render(); updateHitArea(); updatePlayback(); }
 }
 
-function applyAction({ action, manual = true }) {
+function applyAction({ action, manual = true, voice = true }) {
   if (!pet) return;
-  if (!actionMap[action]) { say('这个模型没有对应动作。'); return; }
+  if (!actionMap[action]) { say('当前模型不支持此动作。'); return; }
   play(action);
   const clipId = { interact: '034', special: '036', relax: '010', sit: '010', sleep: '010' }[action];
-  if (clipId) voicePlayer.play(clipId, manual);
+  if (voice && clipId) voicePlayer.play(clipId, manual);
 }
 
 // Sample the model's own poses once so the pool, hair and props have room.
@@ -89,7 +89,7 @@ function configureForm(id) {
   bridge.ready({ modelId: renderModel.id, form: form.id, actions: actionMap, animations: pet.spineData.animations.map(animation => ({ name: animation.name, duration: animation.duration })) });
 }
 
-function clickAction() { bridge.action('interact'); }
+function clickAction() { bridge.interact(); }
 
 function updateHitArea() {
   if (!prefs.visible) return;
@@ -193,7 +193,7 @@ async function init() {
     renderModel = prefs.model;
     document.title = `${prefs.model.name} · 桌面宠物`;
     hit.setAttribute('aria-label', `${prefs.model.name}：点击互动，拖动或抛掷，右键菜单`);
-    if (!window.PIXI?.spine) throw new Error('渲染依赖缺失，请先在项目目录执行 npm install。');
+    if (!window.PIXI?.spine) throw new Error('渲染依赖缺失，请通过 start.cmd 重新启动并安装依赖。');
     // HTMLImageElement + PMA preserves the upstream premultiplied texture.
     await PIXI.Assets.init({ preferences: { preferCreateImageBitmap: false, preferWorkers: false } });
     app = new PIXI.Application({ width: innerWidth, height: innerHeight, backgroundAlpha: 0, antialias: false, autoDensity: true, resolution: 1, powerPreference: 'low-power', autoStart: false });
@@ -245,7 +245,7 @@ function showError(error) {
   voicePlayer.stop(true);
   console.error(error); app?.stop(); hit.hidden = true; loading.hidden = false;
   document.querySelector('#loading-dot').hidden = true;
-  document.querySelector('#load-title').textContent = '桌宠暂时迷路了';
+  document.querySelector('#load-title').textContent = '模型加载失败';
   document.querySelector('#load-detail').textContent = error.message || String(error);
   document.querySelector('#error-actions').hidden = false;
   bridge.error(error.message || String(error));

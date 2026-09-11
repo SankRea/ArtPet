@@ -3,6 +3,7 @@ const byId = id => document.getElementById(id);
 const booleanKeys = ['wander', 'autoActions', 'manualMode', 'gravity', 'windowEdges', 'alwaysOnTop', 'translucent', 'clickThrough', 'voiceEnabled'];
 let selectedId, petListSignature = '', formSignature = '', voiceSignature = '', currentData, uiBusy = false, searchTimer;
 let catalogIndex = [], modelsById = new Map();
+let voicePreviewKey = '';
 
 function options(select, records) {
   select.replaceChildren(...records.map(({ value, label }) => {
@@ -33,6 +34,23 @@ function updateButtons() {
   byId('play-voice').disabled = busy || !pet?.voiceEnabled || !pet?.voice?.cached || !pet?.ready || !pet?.visible || pet?.paused || pet?.fullscreenSuspended || !byId('voice-clip').value;
   byId('voice-clip').disabled = !pet?.voice?.cached;
   byId('stop-voice').disabled = !pet?.voiceEnabled;
+  byId('voice-source').disabled = !pet?.voice?.available;
+}
+function updateVoicePreview() {
+  const pet = currentData?.pets.find(item => item.id === selectedId), clipId = byId('voice-clip').value;
+  if (!pet?.voiceEnabled || !pet.voice?.available || !clipId) {
+    voicePreviewKey = '';
+    byId('voice-text').textContent = pet?.voice?.available ? '请选择语音片段。' : '当前干员暂无可用语音。';
+    return;
+  }
+  const key = `${pet.id}:${pet.voice.id}:${clipId}`;
+  if (key === voicePreviewKey) return;
+  voicePreviewKey = key;
+  byId('voice-text').textContent = '正在加载语音文本…';
+  window.ArkPetVoiceTexts.get(pet.voice, pet.id).then(result => {
+    if (voicePreviewKey !== key) return;
+    byId('voice-text').textContent = result.clips[clipId] || result.error || '当前语音暂无对应的中文文本。';
+  });
 }
 async function request(work, success) {
   uiBusy = true; updateButtons(); byId('operation-message').textContent = '';
@@ -77,22 +95,23 @@ function render(data) {
     data.shortcutStatus.visibility ? 'Ctrl + Alt + S 显示 / 隐藏全部桌宠' : '显示快捷键被占用，请使用托盘菜单',
     data.shortcutStatus.clickThrough ? 'Ctrl + Alt + P 切换全部桌宠的鼠标穿透' : '穿透快捷键被占用，请使用托盘菜单'
   ].join('\n');
-  if (!state) { byId('status').textContent = '未添加桌宠'; return; }
+  if (!state) { voicePreviewKey = ''; byId('status').textContent = '未添加桌宠'; return; }
   byId('pet-select').value = state.id;
   for (const key of booleanKeys) byId(key).checked = state[key];
   byId('wander').disabled = state.manualMode;
   byId('autoActions').disabled = state.manualMode;
   byId('windowEdges').disabled = !state.gravity || !data.windowDetection.available;
-  byId('window-status').textContent = data.windowDetection.error || (!state.gravity ? '开启重力后可站在窗口上沿。' : '支持露出的窗口上沿；窗口最小化或关闭后会下落。');
+  byId('window-status').textContent = data.windowDetection.error || (!state.gravity ? '启用重力后可使用窗口边缘停靠。' : '支持可见窗口的上边缘；窗口最小化或关闭后，桌宠受重力影响下落。');
   byId('scale').value = Math.round(state.scale * 100);
   byId('scale-value').textContent = `${Math.round(state.scale * 100)}%`;
   byId('speed').value = state.speed; byId('speed-value').textContent = state.speed;
   byId('frameRate').value = state.frameRate;
   const voice = state.voice;
+  byId('voiceEnabled').disabled = !voice?.available && !state.voiceEnabled;
   const nextVoiceSignature = voice?.id || '';
   if (nextVoiceSignature !== voiceSignature) {
     voiceSignature = nextVoiceSignature;
-    options(byId('voice-clip'), (voice?.clips || []).map(clip => ({ value: clip.id, label: clip.label || clip.id })));
+    options(byId('voice-clip'), (voice?.clips || []).map(clip => ({ value: clip.id, label: clip.label === '戳一下' ? '点击交互' : clip.label || clip.id })));
     if (voice?.clips.some(clip => clip.id === '034')) byId('voice-clip').value = '034';
   }
   byId('voice-controls').hidden = !state.voiceEnabled;
@@ -100,10 +119,11 @@ function render(data) {
   byId('download-voice').hidden = !voice?.available || voice.cached;
   byId('voiceVolume').value = Math.round(state.voiceVolume * 100);
   byId('voiceVolume-value').textContent = `${Math.round(state.voiceVolume * 100)}%`;
+  updateVoicePreview();
   updateButtons();
-  byId('pause').textContent = state.paused ? '继续动画与物理' : '暂停动画与物理';
+  byId('pause').textContent = state.paused ? '恢复活动' : '暂停活动';
   byId('visibility').textContent = state.fullscreenSuspended ? (state.userHidden ? '恢复后显示桌宠' : '恢复后保持隐藏') : (state.userHidden ? '显示桌宠' : '隐藏桌宠');
-  const status = state.error || (state.fullscreenSuspended ? '全屏应用运行中，已自动休眠' : !state.ready ? '读取模型中…' : !state.visible ? '已隐藏' : state.paused ? '已暂停' : state.manualMode ? '手动模式' : state.clickThrough ? '鼠标穿透中' : '自主陪伴中');
+  const status = state.error || (state.fullscreenSuspended ? '全屏应用运行中，已自动休眠' : !state.ready ? '正在加载模型…' : !state.visible ? '已隐藏' : state.paused ? '已暂停' : state.manualMode ? '手动模式' : state.clickThrough ? '鼠标穿透已启用' : '自动模式');
   byId('status').textContent = `${state.model.name} · ${status}${data.fullscreen?.error ? ` · ${data.fullscreen.error}` : ''}`;
   for (const button of document.querySelectorAll('[data-action]')) {
     button.disabled = !state.ready || state.fullscreenSuspended || !state.supportedActions.includes(button.dataset.action);
@@ -132,7 +152,8 @@ byId('form-select').addEventListener('change', event => bridge.form(event.target
 byId('frameRate').addEventListener('change', event => bridge.settings({ frameRate: Number(event.target.value) }, selectedId));
 byId('voiceVolume').addEventListener('input', event => { byId('voiceVolume-value').textContent = `${event.target.value}%`; });
 byId('voiceVolume').addEventListener('change', event => bridge.settings({ voiceVolume: Number(event.target.value) / 100 }, selectedId));
-byId('voice-clip').addEventListener('change', updateButtons);
+byId('voice-clip').addEventListener('change', () => { updateButtons(); updateVoicePreview(); });
+byId('voice-source').addEventListener('click', () => bridge.openVoiceTextSource(selectedId));
 byId('play-voice').addEventListener('click', () => bridge.playVoice(byId('voice-clip').value, selectedId));
 byId('stop-voice').addEventListener('click', () => bridge.stopVoice(selectedId));
 byId('download-voice').addEventListener('click', () => request(() => bridge.downloadVoice(selectedId), '语音已下载。'));

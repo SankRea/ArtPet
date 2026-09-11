@@ -41,4 +41,8 @@ details { border-top: 1px solid #e5e5e5; margin-top: 18px; padding-top: 12px; }
 summary { cursor: pointer; }
 details p { margin: 8px 0; }
 #shortcuts { white-space: pre-line; }
+.voice-preview { margin: 10px 0; padding: 10px 12px; border: 1px solid #e5e5e5; border-radius: 4px; background: #fafafa; max-height: 200px; overflow: auto; }
+#voice-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
+.voice-source-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.voice-source-row button { padding: 4px 8px; font-size: 12px; }
 footer { margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e5e5; }

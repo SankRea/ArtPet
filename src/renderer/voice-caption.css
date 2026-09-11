@@ -1,0 +1,10 @@
+:root { color-scheme: light; font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; color: #252525; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: transparent; overflow: hidden; }
+body { padding: 4px; }
+#dialogue { padding: 14px 16px 12px; border: 1px solid #dedede; border-radius: 12px; background: #fffffff5; }
+header { display: flex; gap: 12px; align-items: baseline; font-size: 12px; }
+header strong { flex-shrink: 0; font-weight: 600; }
+#clip-label { color: #666; }
+#transcript { margin: 10px 0; max-height: min(230px, calc(100vh - 100px)); overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.75; }
+footer { color: #888; font-size: 10px; }

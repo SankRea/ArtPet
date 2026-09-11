@@ -2,9 +2,10 @@ const { BrowserWindow, Menu, screen } = require('electron');
 const path = require('node:path');
 const { findModel } = require('./models.cjs');
 const { clamp, stepPhysics } = require('./physics.cjs');
+const { VoiceCaption } = require('./voice-caption.cjs');
 
 const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 30, voiceEnabled: false, voiceVolume: 0.6, wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
-const LABELS = { default: '回到待机', interact: '戳一戳', relax: '休息', sit: '坐下', sleep: '躺下 / 睡觉', special: '特殊动作' };
+const LABELS = { default: '恢复待机', interact: '交互动作', relax: '休息', sit: '坐下', sleep: '睡眠', special: '特殊动作' };
 const exists = win => win && !win.isDestroyed();
 const number = (value, fallback, min, max) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback;
 
@@ -19,6 +20,7 @@ class PetWindow {
     this.body = { x: number(saved.x, area.x + area.width - size.width - 36 - host.spawnIndex * 90, -100000, 100000), y: number(saved.y, area.y + area.height - this.geometry.footY, -100000, 100000), vx: 0, vy: 0, support: null };
     this.ready = false; this.error = ''; this.paused = false; this.ignored = false; this.menuOpen = false;
     this.voiceError = '';
+    this.caption = new VoiceCaption(this);
     this.userHidden = false;
     this.fullscreenSuspended = host.globalState().fullscreen.active;
     this.suspendedAt = this.fullscreenSuspended ? Date.now() : 0;
@@ -42,12 +44,14 @@ class PetWindow {
       if (x !== Math.round(this.body.x) || y !== Math.round(this.body.y)) {
         this.body.x = x; this.body.y = y; this.body.support = null; this.host.wakeLoop();
       }
+      this.caption.syncPosition();
     });
     this.win.setOpacity(this.settings.translucent ? 0.55 : 1);
     this.contain(); this.place();
     this.win.once('ready-to-show', () => { if (!this.userHidden) this.show(); });
     this.win.on('blur', () => this.endDrag(true));
-    this.win.on('closed', () => { this.win = null; host.closed(this); });
+    this.win.on('hide', () => this.caption.close());
+    this.win.on('closed', () => { this.caption.close(); this.win = null; host.closed(this); });
     this.win.webContents.on('render-process-gone', () => { this.ready = false; this.error = '画面进程已停止，请在菜单中重新加载'; this.stopWalking(); this.changed(); });
     this.win.webContents.on('did-fail-load', (_event, code, message) => { if (code !== -3) { this.error = message; this.changed(); } });
     this.win.loadURL('arkpet://app/renderer/pet.html');
@@ -64,13 +68,18 @@ class PetWindow {
       voice: this.host.voices.state(this.model.id), voiceError: this.voiceError,
       animationNames: this.animations.map(item => item.name), ...this.host.globalState() };
   }
-  changed() { this.send('pet:state', this.state()); this.host.changed(); }
+  changed() {
+    if (!this.settings.voiceEnabled || !this.ready || this.error || this.paused || this.userHidden || this.fullscreenSuspended) this.caption.close();
+    else this.caption.syncPosition();
+    this.send('pet:state', this.state()); this.host.changed();
+  }
   place() {
     if (!exists(this.win)) return;
     const x = Math.round(this.body.x), y = Math.round(this.body.y);
     if (x !== this.position.x || y !== this.position.y) {
       this.position = { x, y }; this.win.setPosition(x, y);
     }
+    this.caption.syncPosition();
   }
   contain() {
     const { body, geometry } = this;
@@ -197,7 +206,7 @@ class PetWindow {
     this.pose = 'move'; this.nextBehavior = Date.now() + 15000;
     this.send('pet:motion', { walking: true, direction }); this.changed();
   }
-  act(action, manual = true) {
+  act(action, manual = true, voice = true) {
     if (this.fullscreenSuspended || !this.ready || !this.supported.includes(action) || !Object.hasOwn(LABELS, action)) return;
     this.endDrag(true); this.stopWalking();
     if (manual) this.paused = false;
@@ -207,7 +216,28 @@ class PetWindow {
     // Autonomous poses also finish at least two cycles before another action is chosen.
     this.nextBehavior = Date.now() + Math.max(duration * 2000, action === 'sleep' ? 25000 : 8000) + Math.random() * 12000;
     if (manual) this.show();
-    this.send('pet:action', { action, manual }); this.changed();
+    this.send('pet:action', { action, manual, voice }); this.changed();
+  }
+  interact() {
+    if (this.fullscreenSuspended || !this.ready || this.settings.clickThrough || this.dragging) return;
+    if (this.supported.includes('interact')) this.act('interact', true, false);
+    else { this.paused = false; this.show(); }
+    const voice = this.host.voices.state(this.model.id);
+    if (!this.settings.voiceEnabled || !voice.cached || !voice.clips.length) return;
+    const choices = voice.clips.length > 1 ? voice.clips.filter(clip => clip.id !== this.lastClickVoice) : voice.clips;
+    const clip = choices[Math.floor(Math.random() * choices.length)];
+    this.lastClickVoice = clip.id;
+    this.send('pet:voice-play', clip.id);
+  }
+  stopVoice() { this.caption.close(); this.send('pet:voice-stop'); }
+  showVoiceCaption(data) {
+    if (!data) { this.caption.close(); return; }
+    if (data.modelId !== this.model.id || !this.settings.voiceEnabled || !this.ready || this.paused || this.userHidden || this.fullscreenSuspended || this.dragging) return;
+    const clip = this.host.voices.state(this.model.id).clips.find(item => item.id === data.clipId);
+    if (!clip || !Number.isSafeInteger(data.playbackId) || !Number.isFinite(data.duration) || data.duration <= 0 || data.duration > clip.end - clip.start + 0.5) return;
+    if (typeof data.text !== 'string' || data.text.length > 10000) return;
+    this.caption.show({ name: this.model.name, label: clip.label === '戳一下' ? '点击交互' : clip.label,
+      text: data.text || '当前语音暂无对应的中文文本。', hasText: data.hasText === true, duration: data.duration, playbackId: data.playbackId });
   }
   startDrag() {
     if (this.fullscreenSuspended || this.settings.clickThrough || this.dragging) return;
@@ -234,24 +264,26 @@ class PetWindow {
     const toggle = (label, key) => ({ label, type: 'checkbox', checked: this.settings[key], click: item => this.updateSettings({ [key]: item.checked }) });
     return [
       { label: `${this.model.name} · ${this.form().name}`, enabled: false },
-      { label: '打开启动器 / 控制面板', click: () => this.host.openLauncher(this.id) },
+      { label: '打开设置', click: () => this.host.openLauncher(this.id) },
       { label: '动作', enabled: this.ready && !this.fullscreenSuspended, submenu: [
         ...Object.entries(LABELS).map(([action, label]) => ({ label, enabled: this.supported.includes(action), click: () => this.act(action) })),
-        { label: '向左走一会儿', enabled: this.supported.includes('move'), click: () => this.startWalking(-1) },
-        { label: '向右走一会儿', enabled: this.supported.includes('move'), click: () => this.startWalking(1) }
+        { label: '向左移动', enabled: this.supported.includes('move'), click: () => this.startWalking(-1) },
+        { label: '向右移动', enabled: this.supported.includes('move'), click: () => this.startWalking(1) }
       ] },
       { label: '切换形态', enabled: this.model.forms.length > 1, submenu: this.model.forms.map(form => ({ label: form.name, type: 'radio', checked: this.settings.form === form.id, click: () => this.setForm(form.id) })) },
       { type: 'separator' },
-      toggle('手动模式（停止自主行为）', 'manualMode'), toggle('自动散步', 'wander'), toggle('随机休息 / 特殊动作', 'autoActions'),
-      toggle('重力 / 抛掷', 'gravity'), { ...toggle('站在窗口上沿', 'windowEdges'), enabled: this.host.globalState().windowDetection.available },
+      toggle('手动模式', 'manualMode'), toggle('自动移动', 'wander'), toggle('自主动作', 'autoActions'),
+      toggle('重力与抛掷', 'gravity'), { ...toggle('窗口边缘停靠', 'windowEdges'), enabled: this.settings.gravity && this.host.globalState().windowDetection.available },
       toggle('始终置顶', 'alwaysOnTop'), toggle('半透明', 'translucent'), toggle('鼠标穿透', 'clickThrough'),
-      { label: this.paused ? '继续动画与物理' : '暂停动画与物理', click: () => this.togglePause() },
+      { ...toggle('启用语音', 'voiceEnabled'), enabled: this.settings.voiceEnabled || this.host.voices.state(this.model.id).available },
+      { label: '停止语音', enabled: this.settings.voiceEnabled, click: () => this.stopVoice() },
+      { label: this.paused ? '恢复活动' : '暂停活动', click: () => this.togglePause() },
       { type: 'separator' },
       { label: this.userHidden ? '显示桌宠' : '隐藏桌宠', click: () => this.toggleVisible() },
-      { label: '找回桌宠', click: () => this.reset() },
+      { label: '重置桌宠位置', click: () => this.reset() },
       { label: '重新加载模型', click: () => this.reload() },
-      { label: '退出这个桌宠', click: () => this.host.closePet(this.id) },
-      { label: '退出全部桌宠和启动器', click: () => this.host.quit() }
+      { label: '关闭当前桌宠', click: () => this.host.closePet(this.id) },
+      { label: '退出应用', click: () => this.host.quit() }
     ];
   }
   contextMenu() {

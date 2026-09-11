@@ -6,12 +6,14 @@ const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const catalog = require('../assets/voices.json');
 const { findModel } = require('./models.cjs');
+const { VoiceTextLibrary, sourceUrl } = require('./voice-text-library.cjs');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const BUNDLED_VOICE = 'char_350_surtr';
 
 class VoiceLibrary {
   constructor(userData) {
     this.root = path.join(userData, 'voices');
+    this.texts = new VoiceTextLibrary(userData);
     this.entries = new Map(); this.cached = new Map(); this.states = new Map();
     let directories;
     try { directories = new Set(fs.readdirSync(this.root)); } catch { directories = new Set(); }
@@ -41,6 +43,12 @@ class VoiceLibrary {
     const base = model.id.match(/^(\d+_[a-zA-Z0-9]+)/)?.[1];
     return exact || this.entries.get(`char_${base}`) || null;
   }
+  async text(modelId) {
+    const voice = this.find(modelId), model = findModel(modelId);
+    if (!voice || !model) return { error: '当前干员暂无语音资源。' };
+    return { ...await this.texts.get(model.name), voiceId: voice.id, directory: voice.directory };
+  }
+  textSource(modelId) { const model = findModel(modelId); return model ? sourceUrl(model.name) : null; }
   state(modelId) {
     const voice = this.find(modelId);
     if (!voice) return { available: false, cached: false, clips: [] };

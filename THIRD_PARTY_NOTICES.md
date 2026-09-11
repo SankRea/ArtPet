@@ -20,6 +20,15 @@
 
 ## 运行时
 
+### 语音文本
+
+- 中文台词来自 [PRTS Wiki](https://prts.wiki/) 各干员的“语音记录”页面，例如[史尔特尔/语音记录](https://prts.wiki/w/史尔特尔/语音记录)。感谢 PRTS 编辑者的整理。
+- 应用按需读取页面，根据语音文件路径、时装语音变体和片段编号匹配中文文本，并在用户数据目录缓存。设置中的“查看原文”提供对应来源链接；播放对话框标注文本来源。
+- 仓库不内置批量抓取的台词文本。文本获取或匹配失败时显示提示，不生成或改写角色台词。
+- 游戏台词版权归原权利人所有；PRTS 页面内容及贡献者的相关权利和使用条件以来源网站的声明为准。
+
+### 软件组件
+
 `assets/operators.json` 的干员与时装目录来自 [isHarryh/Ark-Models](https://github.com/isHarryh/Ark-Models) 提交 `3745e5c6e10b5252b2a5e1f1841ebef62b7ef15b` 的 `models_data.json`。用户选中其他干员后，程序从该仓库的 `models/` 目录按需下载对应模型，其版权归属和使用限制与内置素材相同。下载来源、上游提交与文件校验值保存在本地模型缓存的 `source.json` 中。
 
 - [Electron](https://github.com/electron/electron)：MIT；其发行包另附 Chromium 等组件声明。

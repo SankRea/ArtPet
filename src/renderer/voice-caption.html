@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'">
+  <title>干员语音</title>
+  <link rel="stylesheet" href="voice-caption.css">
+  <script src="voice-caption.js" defer></script>
+</head>
+<body>
+  <section id="dialogue" role="status" aria-live="polite">
+    <header><strong id="speaker"></strong><span id="clip-label"></span></header>
+    <p id="transcript"></p>
+    <footer id="source">中文文本 · PRTS Wiki</footer>
+  </section>
+</body>
+</html>

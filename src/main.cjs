@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, protocol, screen, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, protocol, screen, globalShortcut, dialog, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -228,18 +228,18 @@ function syncTrays() {
     for (const tray of petTrays.values()) tray.destroy();
     petTrays.clear();
     if (!launcherTray) {
-      launcherTray = new Tray(makeIcon()); launcherTray.setToolTip('ArkPet · 启动器');
+      launcherTray = new Tray(makeIcon()); launcherTray.setToolTip('ArkPet · 设置');
       launcherTray.on('double-click', () => openLauncher());
     }
     launcherTray.setContextMenu(Menu.buildFromTemplate([
-      { label: '打开启动器', click: () => openLauncher() },
+      { label: '打开设置', click: () => openLauncher() },
       { label: '选择 / 更换干员', click: () => openLauncher() },
       { label: `桌宠数量：${pets.size} / ${maxPets}`, enabled: false },
       { type: 'separator' },
       ...[...pets.values()].map((pet, index) => ({ label: `${index + 1}. ${pet.model.name}`, submenu: pet.menu() })),
       { type: 'separator' },
-      { label: '关闭启动器，桌宠各自保留托盘', click: () => launcher.close() },
-      { label: '退出启动器和全部桌宠', click: () => app.quit() }
+      { label: '关闭设置窗口', click: () => launcher.close() },
+      { label: '退出应用', click: () => app.quit() }
     ]));
   } else {
     launcherTray?.destroy(); launcherTray = null;
@@ -262,6 +262,7 @@ function registerIpc() {
   ipcMain.handle('pet:get-state', event => trusted(event) ? senderPet(event)?.state() || launcherState() : null);
   ipcMain.on('pet:settings', (event, { patch, id } = {}) => target(event, id)?.updateSettings(patch));
   ipcMain.on('pet:action', (event, { action, id } = {}) => target(event, id)?.act(action));
+  ipcMain.on('pet:interact', event => { if (trusted(event)) senderPet(event)?.interact(); });
   ipcMain.on('pet:walk', (event, { direction, id } = {}) => target(event, id)?.startWalking(direction));
   ipcMain.on('pet:form', (event, { form, id } = {}) => target(event, id)?.setForm(form));
   ipcMain.on('pet:command', (event, { command, id } = {}) => {
@@ -280,7 +281,20 @@ function registerIpc() {
     const pet = target(event, id);
     if (pet?.settings.voiceEnabled && pet.ready && voices.state(pet.model.id).cached && voices.state(pet.model.id).clips.some(clip => clip.id === clipId)) pet.send('pet:voice-play', clipId);
   });
-  ipcMain.on('pet:voice-stop', (event, id) => target(event, id)?.send('pet:voice-stop'));
+  ipcMain.on('pet:voice-stop', (event, id) => target(event, id)?.stopVoice());
+  ipcMain.handle('pet:voice-text', (event, id) => {
+    const pet = target(event, id);
+    return pet ? voices.text(pet.model.id) : { error: '当前桌宠不可用。' };
+  });
+  ipcMain.on('pet:voice-text-source', (event, id) => {
+    const pet = target(event, id), url = pet && voices.textSource(pet.model.id);
+    if (url) shell.openExternal(url).catch(() => {});
+  });
+  ipcMain.on('pet:voice-caption', (event, data) => { if (trusted(event)) senderPet(event)?.showVoiceCaption(data); });
+  ipcMain.on('caption:resize', (event, data) => {
+    if (event.senderFrame !== event.sender.mainFrame) return;
+    for (const pet of pets.values()) if (pet.caption.win?.webContents === event.sender) { pet.caption.resize(data); break; }
+  });
   ipcMain.on('pet:voice-error', (event, { modelId, message } = {}) => {
     const pet = senderPet(event);
     if (trusted(event) && pet && pet.model.id === modelId) { pet.voiceError = String(message || '').slice(0, 300); pet.changed(); }

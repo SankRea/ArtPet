@@ -6,6 +6,9 @@
   "main": "src/main.cjs",
   "author": "ArkPet",
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "start": "electron .",
     "start:standalone": "electron . --standalone",

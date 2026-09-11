@@ -137,8 +137,10 @@ class PetWindow {
       const ratio = this.settings.scale / previous.scale, footX = this.body.x + this.geometry.footX, footY = this.body.y + this.geometry.footY;
       for (const key of ['footX', 'footY', 'halfWidth']) this.geometry[key] *= ratio;
       this.body.x = footX - this.geometry.footX; this.body.y = footY - this.geometry.footY;
-      const size = this.size(); this.win.setSize(size.width, size.height);
-      this.contain(); this.place();
+      this.contain();
+      // Resize and reposition together so move events cannot restore the old origin.
+      this.position = { x: Math.round(this.body.x), y: Math.round(this.body.y) };
+      this.win.setBounds({ ...this.position, ...this.size() });
     }
     if (!this.settings.wander || this.settings.manualMode) this.stopWalking();
     if (this.settings.clickThrough) this.endDrag(true);

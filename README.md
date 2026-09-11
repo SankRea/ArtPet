@@ -45,7 +45,11 @@
 
 ## 安装与启动
 
-开发运行环境：**Windows 10／11 x64、Node.js 22 或更新版本、npm 和 Git**。首次安装依赖以及下载未缓存的干员资源需要网络。
+开发运行环境：**Windows 10／11 x64、Node.js 22.12.0 或更新版本、npm 和 Git**。首次安装依赖以及下载未缓存的干员资源需要网络。
+
+克隆仓库后可以直接双击 `start.cmd`。脚本会检查 Node.js 版本及启动所需的依赖文件；缺少依赖时自动安装，安装成功后继续启动。存在 `package-lock.json` 时使用 `npm ci`，否则使用 `npm install`，并包含 Electron 等开发依赖和 Koffi 的可选平台依赖。依赖齐全时直接启动，无需联网安装；安装失败时保留错误提示，修复网络或代理配置后可重新运行脚本。Node.js 和 npm 需要事先自行安装。
+
+也可以通过命令行安装并启动：
 
 ```powershell
 git clone https://github.com/SankRea/ArtPet.git
@@ -54,13 +58,19 @@ npm ci
 npm start
 ```
 
-安装依赖后也可以双击 `start.cmd`。只启动桌宠、不打开设置窗口：
+只启动桌宠、不打开设置窗口：
 
 ```powershell
 npm run start:standalone
 ```
 
-或双击 `start-standalone.cmd`。之后可双击桌宠或托盘图标打开设置。更新代码后，请先从托盘退出旧实例，再重新启动。
+或双击 `start-standalone.cmd`，同样会在缺少依赖时自动安装。之后可双击桌宠或托盘图标打开设置。更新代码后，请先从托盘退出旧实例；如果依赖声明或锁文件发生变化，请执行 `npm ci` 后再重新启动。
+
+### 依赖版本说明
+
+PixiJS 固定在 `7.4.3`，与 `pixi-spine 4.0.6` 配套使用。内置模型为 Spine `3.8.99`；[pixi-spine 的兼容性说明](https://github.com/pixijs-userland/spine#versions-compatibility)明确将 4.x 对应到 PixiJS 7.x，因此迁移到 PixiJS 8 需要同时处理渲染接口和模型运行时的兼容性。
+
+锁文件中仍有 `glob 7`、`inflight`、`rimraf 2` 和 `boolean` 等被上游标记为弃用的间接依赖，来自 Electron 下载工具或 electron-builder 打包工具链。直接依赖更新到较新版本也可能保留这些警告，应通过上游依赖链升级解决，不能仅为消除提示而强行覆盖为不兼容的大版本。
 
 ## 操作
 

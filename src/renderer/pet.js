@@ -138,7 +138,10 @@ hit.addEventListener('keydown', event => {
 });
 hit.addEventListener('wheel', event => {
   event.preventDefault();
-  bridge.settings({ scale: Math.max(0.5, Math.min(1.5, (prefs.scale || 0.75) + (event.deltaY < 0 ? 0.05 : -0.05))) });
+  // Pinch gestures can arrive as Ctrl+wheel; they must not resize the pet.
+  if (event.ctrlKey || event.metaKey || event.deltaY === 0) return;
+  const percent = Math.round((prefs.scale ?? 0.75) * 100) + (event.deltaY < 0 ? 5 : -5);
+  bridge.settings({ scale: Math.max(50, Math.min(150, percent)) / 100 });
 }, { passive: false });
 document.addEventListener('contextmenu', event => { event.preventDefault(); bridge.contextMenu(); });
 document.querySelector('#retry').addEventListener('click', () => location.reload());

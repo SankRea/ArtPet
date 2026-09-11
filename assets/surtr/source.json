@@ -1,0 +1,25 @@
+{
+    "commit":  "3745e5c6e10b5252b2a5e1f1841ebef62b7ef15b",
+    "repository":  "https://github.com/isHarryh/Ark-Models",
+    "files":  [
+                  {
+                      "sha256":  "02c0cce1286e8419fd218a472ac1dc48bdd9d5ce5b8f575919e7801b40530a4b",
+                      "file":  "build_char_350_surtr_summer#9.atlas",
+                      "bytes":  10145
+                  },
+                  {
+                      "sha256":  "5664fb09550bc0edb0f61ec7f9568cef0c2f71585dfa733b7c2e14c91f60b684",
+                      "file":  "build_char_350_surtr_summer#9.png",
+                      "bytes":  490645
+                  },
+                  {
+                      "sha256":  "8cf02b6b98dde2524bf6dd49016223cfe3c2ec9f49309cf82154494391456a16",
+                      "file":  "build_char_350_surtr_summer#9.skel",
+                      "bytes":  351261
+                  }
+              ],
+    "modelId":  "350_surtr_summer#9",
+    "premultipliedAlpha":  true,
+    "name":  "史尔特尔",
+    "outfit":  "珊瑚海岸/IX"
+}

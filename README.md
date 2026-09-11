@@ -1,0 +1,161 @@
+﻿# ArtPet · 明日方舟桌面宠物
+
+基于 Electron、PixiJS 和 Spine 的 Windows 桌面宠物。默认内置**史尔特尔泳装小人（珊瑚海岸/IX）**，支持循环动画、鼠标互动、重力与窗口停靠，以及按需下载其他干员的模型和语音。
+
+仓库名称为 ArtPet，应用名称及本地数据目录沿用 `ArkPet Surtr`。本项目为非官方作品，与《明日方舟》官方无隶属关系。
+
+## 鸣谢
+
+特别感谢 **[isHarryh](https://github.com/isHarryh)** 整理并分享的模型与语音资源。本项目实际使用了以下仓库和组件，在此向作者、维护者及贡献者致谢：
+
+| 作者／维护组织 | 仓库 | 本项目中的用途 |
+| --- | --- | --- |
+| [isHarryh](https://github.com/isHarryh) | [Ark-Models](https://github.com/isHarryh/Ark-Models) | 史尔特尔泳装模型、干员与时装目录，以及其他干员模型的按需下载来源 |
+| [isHarryh](https://github.com/isHarryh) | [Ark-Voice](https://github.com/isHarryh/Ark-Voice) | 干员语音、语种信息和语音片段时间索引 |
+| [Electron](https://github.com/electron) | [electron](https://github.com/electron/electron) | 桌面应用运行环境、透明窗口、系统托盘与快捷键 |
+| [PixiJS](https://github.com/pixijs) | [pixijs](https://github.com/pixijs/pixijs) | 小人模型的二维图形渲染 |
+| [pixijs-userland](https://github.com/pixijs-userland) | [spine（pixi-spine）](https://github.com/pixijs-userland/spine) | Spine 模型加载与动画播放 |
+| [Esoteric Software](https://github.com/EsotericSoftware) | [spine-runtimes](https://github.com/EsotericSoftware/spine-runtimes) | pixi-spine 集成的 Spine 运行时代码 |
+| [Koromix](https://github.com/Koromix) | [koffi](https://github.com/Koromix/koffi) | 调用 Windows 窗口接口，实现窗口边沿检测和全屏检测 |
+| [electron-userland](https://github.com/electron-userland) | [electron-builder](https://github.com/electron-userland/electron-builder) | Windows 便携版打包 |
+
+感谢上海鹰角网络有限公司及《明日方舟》的创作者。角色模型、贴图和语音的版权归原权利人所有；Ark-Models 与 Ark-Voice 的上游声明禁止将其素材用于商业用途或损害版权方利益。具体来源、固定提交、校验记录与组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 功能
+
+- **循环动画与互动**：待机、行走、坐下、睡眠、点击互动和特殊动作；可用动作取决于所选模型，自主行为有机会触发特殊动作。
+- **干员切换**：本地目录支持搜索干员与时装，只在更换或添加时下载所选资源，提供下载进度、取消和缓存复用。
+- **桌面物理**：支持拖动、抛掷、自由下落、跨显示器移动，以及站在可见窗口的上沿。
+- **简洁设置**：纯白背景，可调整大小、帧率、数量上限、语音、透明度、鼠标穿透和手动模式。
+- **系统托盘**：设置窗口打开时合并为一个托盘，关闭后各桌宠保留自己的托盘，可退出单个或全部桌宠。
+- **全屏自动休眠**：前台应用进入全屏后隐藏桌宠并暂停动画、物理和语音，退出全屏后自动恢复。
+
+## 默认配置
+
+| 配置 | 默认值 | 可调整范围／说明 |
+| --- | --- | --- |
+| 干员 | 史尔特尔泳装 | 在设置中选择其他干员或时装 |
+| 大小 | 75% | 50%～150% |
+| 同时存在的桌宠上限 | 1 | 1～100 |
+| 动画帧率 | 30 FPS | 15／24／30／45／60 FPS |
+| 人物语音 | 关闭 | 可开启并选择片段播放 |
+| 语音音量 | 60% | 可在设置中调整 |
+
+帧率只影响渲染频率，不改变动作时长。静态姿势本身没有动画帧；史尔特尔默认使用有时长的 `Relax` 动作循环待机。
+
+## 安装与启动
+
+开发运行环境：**Windows 10／11 x64、Node.js 22 或更新版本、npm 和 Git**。首次安装依赖以及下载未缓存的干员资源需要网络。
+
+```powershell
+git clone https://github.com/SankRea/ArtPet.git
+cd ArtPet
+npm ci
+npm start
+```
+
+安装依赖后也可以双击 `start.cmd`。只启动桌宠、不打开设置窗口：
+
+```powershell
+npm run start:standalone
+```
+
+或双击 `start-standalone.cmd`。之后可双击桌宠或托盘图标打开设置。更新代码后，请先从托盘退出旧实例，再重新启动。
+
+## 操作
+
+| 操作 | 效果 |
+| --- | --- |
+| 单击小人 | 播放互动动作 |
+| 左键拖动并松开 | 移动或抛掷；开启重力时自然下落，拖动时不显示文字提示 |
+| 鼠标滚轮 | 调整小人大小 |
+| 双击小人 | 打开设置窗口 |
+| 右键小人或托盘 | 打开动作、设置、显示隐藏与退出菜单 |
+| 设置中的“向左走／向右走” | 手动行走；小人获得键盘焦点后也可使用左右方向键 |
+| `Ctrl + Alt + S` | 显示／隐藏全部桌宠 |
+| `Ctrl + Alt + P` | 切换全部桌宠的鼠标穿透 |
+
+手动选择动作后持续循环，直到选择其他动作、行走，或点击“回到待机”恢复自主行为。“手动模式”停止自主行为，仍保留手动动作和物理效果；“暂停”同时暂停动画和物理。“半透明模式”将不透明度设为 55%，与鼠标穿透分别控制。
+
+## 更换干员与按需下载
+
+1. 打开设置，在“选择干员”中搜索中文名、英文名或时装系列。
+2. 选择干员／时装，点击“更换当前干员”；未缓存时会提示先下载。
+3. 等待所选模型及对应语音下载完成。更换后保留当前桌宠的位置、大小和设置。
+
+仓库只内置史尔特尔泳装模型及她的一份日语语音。`assets/operators.json` 保存 **936 个干员／时装条目的目录快照**，`assets/voices.json` 保存对应语音元数据；浏览目录不会下载其他模型或音频。
+
+下载固定到上游提交，避免模型文件版本不一致，并校验文件大小与 SHA-256。已缓存资源可离线复用，取消或失败时保留当前干员。目录不是自动同步的实时列表，具体收录以本地快照为准。
+
+### 人物语音
+
+在设置中开启“人物语音”后，可以选择片段播放、停止和调整音量。点击互动与部分动作也可触发对应语音；自主动作语音有冷却时间，动画循环不会重复触发声音。界面显示片段名称，不使用自编文字作为角色的官方台词。
+
+下载时优先匹配该时装的语音，缺少时使用同一干员的基础语音；优先日语，其后依次选择普通话、英语、韩语和个性化语音，每个条目只下载一种语言。实际语种会在界面显示，目前没有语种切换选项。上游未收录语音时仍可使用模型。
+
+旧版缓存模型缺少语音时，开启语音只补下载当前干员，也可点击“下载语音”重试。同一干员的多个时装可以共享基础语音缓存。
+
+## 配置与本地数据
+
+仓库中的 [config.json](config.json) 提供默认数量上限：
+
+```json
+{
+  "maxPets": 1
+}
+```
+
+在设置中修改后的值优先于默认配置。达到上限后仍可更换当前干员；降低上限前需先退出多余桌宠。
+
+| 路径 | 内容 |
+| --- | --- |
+| `%APPDATA%\ArkPet Surtr\settings.json` | 用户设置、桌宠状态与数量上限 |
+| `%APPDATA%\ArkPet Surtr\models\` | 按需下载的模型缓存 |
+| `%APPDATA%\ArkPet Surtr\voices\` | 按需下载的语音缓存 |
+
+这些用户数据存放在仓库之外。`.gitignore` 排除了依赖、构建输出、缓存、日志和本地环境文件；内置素材、来源记录、依赖锁文件与默认配置保留在版本管理中。
+
+## 全屏休眠与资源占用
+
+前台窗口的内容区域覆盖完整显示器时，全部桌宠自动隐藏，停止动画、物理、鼠标轮询、窗口边沿扫描和语音播放，仅保留每秒一次的全屏检测。退出全屏或切回普通窗口后，通常约 1 秒恢复，不抢占焦点，保留原有位置、动作和手动暂停／隐藏状态。被停止的语音不会自动重播。
+
+多屏环境中，前台应用全屏会让所有桌宠休眠；后台全屏窗口不会阻止恢复。普通保留标题栏或任务栏的最大化窗口不视为全屏。若启动时已有前台全屏应用，桌宠先保持隐藏，也不自动弹出设置。
+
+为减少开销，程序默认以 30 FPS 和逻辑像素分辨率绘制；隐藏、暂停、拖动和静态姿势会停止持续重绘。后台轮询根据活动状态调整，设置窗口关闭时销毁对应界面。音频仅在播放时解码，闲置后释放，关闭语音时不预解码。
+
+### 当前限制
+
+- Windows 窗口停靠按矩形上沿检测，不包含窗口侧面、逐像素边缘或桌宠之间的碰撞。
+- 全屏判断基于前台窗口几何信息，特殊游戏窗口的兼容性仍需实机确认。
+- 不同模型支持的动作不同，没有对应动画的操作会禁用。
+- Electron 和模型纹理仍有基础内存开销；目前没有 CPU、GPU、内存或耗电实测数据。
+- 当前版本**未编译、未运行测试、未进行实机验证**，不能将静态检查视为运行验证通过。
+
+## 打包 Windows 便携版
+
+安装依赖后执行：
+
+```powershell
+npm run package:win
+```
+
+输出位置为 `release/ArkPet-Surtr-<版本号>-portable.exe`，便携版运行时无需单独安装 Node.js。打包目录已加入 `.gitignore`。当前尚未执行打包，也未提供已验证的发行包。
+
+## 项目结构
+
+```text
+assets/                    干员与语音目录、内置史尔特尔素材、来源和许可
+src/main.cjs               应用入口、设置窗口、托盘与全屏休眠调度
+src/pet-window.cjs         桌宠窗口、交互与自主行为
+src/physics.cjs            重力与移动
+src/window-surfaces.cjs    Windows 窗口边沿及全屏检测
+src/model-library.cjs      模型下载、缓存与校验
+src/voice-library.cjs      语音匹配、下载与缓存
+src/renderer/              设置界面、模型渲染与语音播放
+config.json                默认配置
+THIRD_PARTY_NOTICES.md     第三方来源与许可说明
+```
+
+## 许可说明
+
+本项目当前 `package.json` 标记为 `UNLICENSED`，尚未为项目自身代码指定开源许可证。第三方代码遵循各自许可，模型和语音遵循原权利人的使用限制。Spine 运行时适用独立的 Spine Runtimes License，不能将其视为 pixi-spine 集成代码的 MIT 许可。详见 [第三方声明](THIRD_PARTY_NOTICES.md) 与 [Spine 许可原文](assets/licenses/SPINE-LICENSE)。

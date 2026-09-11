@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'">
+  <title>ArkPet 设置</title>
+  <link rel="stylesheet" href="settings.css">
+  <script src="settings.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>ArkPet 设置</h1>
+      <p id="status" class="inline-note" role="status">正在读取模型…</p>
+    </header>
+
+    <section class="launcher-card" aria-labelledby="launcher-heading">
+      <h2 id="launcher-heading">干员</h2>
+      <input id="model-search" type="search" aria-label="搜索干员和时装" placeholder="搜索干员、英文名或时装系列">
+      <select id="model-select" aria-label="选择干员或时装"></select>
+      <p id="catalog-info" class="inline-note"></p>
+      <div class="utility-bar"><button id="replace-pet" type="button">更换当前干员</button><button id="add-pet" type="button">添加桌宠</button></div>
+      <p class="inline-note">更换或添加时下载所选模型及对应语音；已缓存的资源可离线使用。</p>
+      <div class="limit-row"><label for="max-pets">同时存在上限</label><input id="max-pets" type="number" min="1" max="100" step="1" value="1"><button id="save-limit" type="button">保存</button><span id="pet-count"></span></div>
+      <div id="download-panel" hidden><progress id="download-progress" max="1" value="0"></progress><p id="download-text" class="inline-note"></p><button id="cancel-download" type="button">取消下载</button></div>
+      <p id="operation-message" class="inline-note" role="status"></p>
+      <div id="pet-picker" hidden><label for="pet-select" class="control-label">当前控制的桌宠</label><select id="pet-select"></select></div>
+      <p id="empty-message" hidden>还没有桌宠，从上面选择一个吧。</p>
+    </section>
+
+    <div id="pet-panel">
+    <section aria-labelledby="actions-heading">
+      <h2 id="actions-heading">动作</h2>
+      <div id="form-row" class="select-row form-row"><label for="form-select">角色形态</label><select id="form-select"></select></div>
+      <div class="actions">
+        <button data-action="interact" disabled>互动</button>
+        <button data-action="special" disabled>特殊动作</button>
+        <button data-action="relax" disabled>休息</button>
+        <button data-action="sit" disabled>坐下</button>
+        <button data-action="sleep" disabled>睡觉</button>
+        <button data-action="default" disabled>回到待机</button>
+      </div>
+      <div class="utility-bar"><button data-walk="-1" type="button">← 向左走</button><button data-walk="1" type="button">向右走 →</button></div>
+    </section>
+
+    <section class="preferences" aria-labelledby="preferences-heading">
+      <h2 id="preferences-heading">设置</h2>
+      <div class="setting-row">
+        <label for="manualMode" title="停止自主行为，由你选择动作和位置">手动模式</label>
+        <input id="manualMode" type="checkbox">
+      </div>
+      <div class="setting-row">
+        <label for="wander">自动散步</label>
+        <input id="wander" type="checkbox">
+      </div>
+      <div class="setting-row">
+        <label for="autoActions">随机动作</label>
+        <input id="autoActions" type="checkbox">
+      </div>
+      <div class="setting-row">
+        <label for="gravity">重力与抛掷</label>
+        <input id="gravity" type="checkbox">
+      </div>
+      <div class="setting-row">
+        <label for="windowEdges">站在窗口上沿</label>
+        <input id="windowEdges" type="checkbox">
+      </div>
+      <p id="window-status" class="inline-note"></p>
+      <div class="setting-row">
+        <label for="alwaysOnTop">始终置顶</label>
+        <input id="alwaysOnTop" type="checkbox">
+      </div>
+      <div class="setting-row">
+        <label for="translucent">半透明</label>
+        <input id="translucent" type="checkbox">
+      </div>
+      <div class="setting-row">
+        <label for="clickThrough" title="点击直接落到桌面，用托盘或快捷键恢复">鼠标穿透</label>
+        <input id="clickThrough" type="checkbox">
+      </div>
+      <div class="setting-row"><label for="frameRate">动画帧率</label><select id="frameRate"><option value="15">15 FPS</option><option value="24">24 FPS</option><option value="30" selected>30 FPS · 默认</option><option value="45">45 FPS</option><option value="60">60 FPS</option></select></div>
+      <div class="setting-row"><label for="voiceEnabled">人物语音</label><input id="voiceEnabled" type="checkbox"></div>
+      <div id="voice-controls" hidden>
+        <p id="voice-status" class="inline-note" role="status"></p>
+        <button id="download-voice" type="button" hidden>下载语音</button>
+        <div class="select-row"><label for="voice-clip">语音片段</label><select id="voice-clip"></select></div>
+        <div class="utility-bar"><button id="play-voice" type="button">播放语音</button><button id="stop-voice" type="button">停止</button></div>
+        <div class="slider-row"><label for="voiceVolume">语音音量</label><output id="voiceVolume-value" for="voiceVolume">60%</output><input id="voiceVolume" type="range" min="0" max="100" step="5" value="60"></div>
+      </div>
+      <div class="slider-row"><label for="scale">桌宠大小</label><output id="scale-value" for="scale">75%</output><input id="scale" type="range" min="50" max="150" step="5" value="75"></div>
+      <div class="slider-row"><label for="speed">散步速度</label><output id="speed-value" for="speed">40</output><input id="speed" type="range" min="15" max="90" step="5" value="40"></div>
+    </section>
+
+    <div class="utility-bar">
+      <button id="pause" type="button">暂停动画</button>
+      <button id="visibility" type="button">隐藏桌宠</button>
+      <button id="reset" type="button">找回桌宠</button>
+    </div>
+    <div class="utility-bar"><button id="reload" type="button">重新加载模型</button><button id="quit" type="button">退出当前桌宠</button></div>
+    </div>
+    <details><summary>操作说明与快捷键</summary><p>拖动或抛掷，滚轮调整大小，点击互动。动作循环播放，点“回到待机”恢复自主行为。</p><p>关闭设置窗口后保留桌宠，释放设置界面资源。右键桌宠或双击托盘可重新打开。</p><p id="shortcuts"></p></details>
+    <div class="utility-bar"><button id="detach" type="button">关闭设置，保留桌宠</button><button id="quit-all" type="button">退出全部</button></div>
+    <footer>模型来自 Ark-Models · 设置自动保存</footer>
+  </main>
+</body>
+</html>

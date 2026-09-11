@@ -1,0 +1,42 @@
+# Dependencies and package-manager caches
+node_modules/
+.npm-cache/
+.npm/
+.pnpm-store/
+
+# Build output and coverage
+/release/
+/dist/
+/out/
+/coverage/
+*.tsbuildinfo
+
+# Logs and temporary download files
+*.log
+*.tmp
+*.part
+/.cache/
+/tmp/
+/temp/
+
+# Local settings and credentials (keep example configuration files)
+.env
+.env.*
+!.env.example
+!.env.sample
+/.npmrc
+/settings.json
+/models/
+/voices/
+
+# Editor, local tooling and OS files
+.idea/
+.vscode/
+.codex/
+.agents/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

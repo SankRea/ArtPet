@@ -1,0 +1,5 @@
+# Preserve upstream asset bytes so recorded SHA-256 values survive checkout.
+*.atlas -text
+*.skel -text
+*.png -text
+*.ogg -text

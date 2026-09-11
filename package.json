@@ -1,0 +1,48 @@
+{
+  "name": "arkpet-surtr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "史尔特尔泳装桌面宠物 · ArkPet",
+  "main": "src/main.cjs",
+  "author": "ArkPet",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "start:standalone": "electron . --standalone",
+    "package:win": "electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "koffi": "3.2.1",
+    "pixi-spine": "4.0.6",
+    "pixi.js": "7.4.3"
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "local.arkpet.surtr",
+    "productName": "ArkPet Surtr",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "config.json",
+      "README.md",
+      "THIRD_PARTY_NOTICES.md",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": ["node_modules/@koromix/**/*"],
+    "npmRebuild": false,
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    },
+    "portable": {
+      "artifactName": "ArkPet-Surtr-${version}-portable.exe"
+    }
+  }
+}

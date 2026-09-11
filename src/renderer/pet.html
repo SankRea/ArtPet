@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>史尔特尔 · 桌面宠物</title>
+  <link rel="stylesheet" href="pet.css">
+  <script src="/vendor/pixi.js" defer></script>
+  <script src="/vendor/pixi-spine.js" defer></script>
+  <script src="voice.js" defer></script>
+  <script src="pet.js" defer></script>
+</head>
+<body>
+  <div id="scene" aria-hidden="true"></div>
+  <div id="bubble" role="status" hidden></div>
+  <div id="pet-hit" role="button" tabindex="0" aria-label="史尔特尔：点击互动，拖动移动，双击打开面板，右键打开菜单" hidden></div>
+  <section id="loading" class="card">
+    <div class="loading-dot" id="loading-dot"></div>
+    <strong id="load-title">桌宠正在赶来…</strong>
+    <p id="load-detail">正在读取本地模型</p>
+    <div class="error-actions" id="error-actions" hidden>
+      <button id="retry" type="button">重试</button>
+      <button id="open-settings" type="button">控制面板</button>
+      <button id="quit" type="button">退出</button>
+    </div>
+  </section>
+</body>
+</html>

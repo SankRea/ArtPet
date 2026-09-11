@@ -1,0 +1,328 @@
+const { BrowserWindow, Menu, screen } = require('electron');
+const path = require('node:path');
+const { findModel } = require('./models.cjs');
+const { clamp, stepPhysics } = require('./physics.cjs');
+
+const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 30, voiceEnabled: false, voiceVolume: 0.6, wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
+const LABELS = { default: '回到待机', interact: '戳一戳', relax: '休息', sit: '坐下', sleep: '躺下 / 睡觉', special: '特殊动作' };
+const exists = win => win && !win.isDestroyed();
+const number = (value, fallback, min, max) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback;
+
+class PetWindow {
+  constructor(host, saved) {
+    this.host = host; this.id = saved.id; this.model = findModel(saved.modelId);
+    this.settings = { ...DEFAULTS, scale: number(saved.scale, DEFAULTS.scale, 0.5, 1.5), speed: number(saved.speed, 40, 15, 90), frameRate: [15, 24, 30, 45, 60].includes(saved.frameRate) ? saved.frameRate : DEFAULTS.frameRate, voiceVolume: number(saved.voiceVolume, 0.6, 0, 1) };
+    for (const key of Object.keys(DEFAULTS)) if (typeof DEFAULTS[key] === 'boolean' && typeof saved[key] === 'boolean') this.settings[key] = saved[key];
+    this.settings.form = this.model.forms.find(form => form.id === saved.form)?.id || this.model.forms[0].id;
+    this.geometry = { footX: 210 * this.settings.scale, footY: 366 * this.settings.scale, halfWidth: 55 * this.settings.scale };
+    const size = this.size(), area = screen.getPrimaryDisplay().workArea;
+    this.body = { x: number(saved.x, area.x + area.width - size.width - 36 - host.spawnIndex * 90, -100000, 100000), y: number(saved.y, area.y + area.height - this.geometry.footY, -100000, 100000), vx: 0, vy: 0, support: null };
+    this.ready = false; this.error = ''; this.paused = false; this.ignored = false; this.menuOpen = false;
+    this.voiceError = '';
+    this.userHidden = false;
+    this.fullscreenSuspended = host.globalState().fullscreen.active;
+    this.suspendedAt = this.fullscreenSuspended ? Date.now() : 0;
+    this.hitRects = []; this.animations = []; this.supported = []; this.dragging = null; this.walking = null;
+    this.pose = 'default'; this.manualHold = false; this.falling = false; this.resolvedActions = {};
+    this.nextBehavior = Date.now() + 9000 + Math.random() * 4000;
+    this.win = new BrowserWindow({
+      ...size, x: Math.round(this.body.x), y: Math.round(this.body.y), title: `${this.model.name} · ArkPet`,
+      transparent: true, backgroundColor: '#00000000', frame: false, resizable: false, maximizable: false,
+      fullscreenable: false, minimizable: false, hasShadow: false, skipTaskbar: true, show: false,
+      alwaysOnTop: this.settings.alwaysOnTop,
+      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: this.fullscreenSuspended, autoplayPolicy: 'no-user-gesture-required' }
+    });
+    host.secureWindow(this.win);
+    const [initialX, initialY] = this.win.getPosition();
+    this.position = { x: initialX, y: initialY };
+    this.win.on('move', () => {
+      if (!exists(this.win)) return;
+      const [x, y] = this.win.getPosition();
+      this.position = { x, y };
+      if (x !== Math.round(this.body.x) || y !== Math.round(this.body.y)) {
+        this.body.x = x; this.body.y = y; this.body.support = null; this.host.wakeLoop();
+      }
+    });
+    this.win.setOpacity(this.settings.translucent ? 0.55 : 1);
+    this.contain(); this.place();
+    this.win.once('ready-to-show', () => { if (!this.userHidden) this.show(); });
+    this.win.on('blur', () => this.endDrag(true));
+    this.win.on('closed', () => { this.win = null; host.closed(this); });
+    this.win.webContents.on('render-process-gone', () => { this.ready = false; this.error = '画面进程已停止，请在菜单中重新加载'; this.stopWalking(); this.changed(); });
+    this.win.webContents.on('did-fail-load', (_event, code, message) => { if (code !== -3) { this.error = message; this.changed(); } });
+    this.win.loadURL('arkpet://app/renderer/pet.html');
+  }
+
+  size() { return { width: Math.round(420 * this.settings.scale), height: Math.round(380 * this.settings.scale) }; }
+  send(channel, data) { if (exists(this.win)) this.win.webContents.send(channel, data); }
+  form() { return this.model.forms.find(form => form.id === this.settings.form); }
+  serialise() { return { id: this.id, modelId: this.model.id, ...this.settings, x: Math.round(this.body.x), y: Math.round(this.body.y) }; }
+  state() {
+    return { ...this.serialise(), model: this.model, ready: this.ready, error: this.error, paused: this.paused,
+      visible: exists(this.win) && this.win.isVisible(), supportedActions: this.supported, pose: this.pose,
+      userHidden: this.userHidden, fullscreenSuspended: this.fullscreenSuspended,
+      voice: this.host.voices.state(this.model.id), voiceError: this.voiceError,
+      animationNames: this.animations.map(item => item.name), ...this.host.globalState() };
+  }
+  changed() { this.send('pet:state', this.state()); this.host.changed(); }
+  place() {
+    if (!exists(this.win)) return;
+    const x = Math.round(this.body.x), y = Math.round(this.body.y);
+    if (x !== this.position.x || y !== this.position.y) {
+      this.position = { x, y }; this.win.setPosition(x, y);
+    }
+  }
+  contain() {
+    const { body, geometry } = this;
+    const area = screen.getDisplayNearestPoint({ x: Math.round(body.x + geometry.footX), y: Math.round(body.y + geometry.footY - 1) }).workArea;
+    const previousX = body.x, previousY = body.y;
+    body.x = clamp(body.x, area.x + geometry.halfWidth - geometry.footX, area.x + area.width - geometry.halfWidth - geometry.footX);
+    body.y = clamp(body.y, area.y, area.y + area.height - geometry.footY);
+    if (body.x !== previousX) body.vx = 0;
+    if (body.y !== previousY && body.y === area.y && body.vy < 0) body.vy = 0;
+    return area;
+  }
+  setIgnoring(value) {
+    if (!exists(this.win) || this.ignored === value) return;
+    this.ignored = value; this.win.setIgnoreMouseEvents(value, { forward: true });
+  }
+  show() {
+    if (!exists(this.win)) return;
+    this.userHidden = false;
+    if (!this.fullscreenSuspended) { this.contain(); this.place(); this.win.showInactive(); }
+    this.changed();
+  }
+  toggleVisible() {
+    if (!this.userHidden) { this.userHidden = true; this.endDrag(true); this.stopWalking(); this.win.hide(); this.changed(); } else this.show();
+  }
+  setFullscreenSuspended(value) {
+    if (!exists(this.win) || this.fullscreenSuspended === value) return;
+    this.fullscreenSuspended = value;
+    if (value) {
+      this.suspendedAt = Date.now();
+      this.endDrag(true);
+      this.menuOpen = false;
+      this.win.hide();
+      this.changed();
+      this.win.webContents.setBackgroundThrottling(true);
+    } else {
+      const elapsed = Date.now() - this.suspendedAt;
+      this.nextBehavior += elapsed;
+      if (this.walking) this.walking.until += elapsed;
+      this.suspendedAt = 0;
+      this.win.webContents.setBackgroundThrottling(false);
+      if (!this.userHidden) { this.contain(); this.place(); this.win.showInactive(); }
+      this.changed();
+    }
+  }
+  reset() {
+    this.endDrag(true); this.stopWalking();
+    const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+    Object.assign(this.body, { x: area.x + area.width - this.geometry.footX - 100, y: area.y + area.height - this.geometry.footY, vx: 0, vy: 0, support: null });
+    this.show(); this.host.save();
+  }
+  updateSettings(patch) {
+    if (!patch || typeof patch !== 'object') return;
+    const previous = { ...this.settings };
+    for (const key of Object.keys(DEFAULTS)) if (typeof DEFAULTS[key] === 'boolean' && typeof patch[key] === 'boolean') this.settings[key] = patch[key];
+    if ('scale' in patch) this.settings.scale = number(patch.scale, previous.scale, 0.5, 1.5);
+    if ('speed' in patch) this.settings.speed = number(patch.speed, previous.speed, 15, 90);
+    if ([15, 24, 30, 45, 60].includes(patch.frameRate)) this.settings.frameRate = patch.frameRate;
+    if ('voiceVolume' in patch) this.settings.voiceVolume = number(patch.voiceVolume, previous.voiceVolume, 0, 1);
+    if (Object.keys(DEFAULTS).every(key => previous[key] === this.settings[key])) return;
+    if (this.settings.alwaysOnTop !== previous.alwaysOnTop) this.win.setAlwaysOnTop(this.settings.alwaysOnTop, 'floating');
+    if (this.settings.translucent !== previous.translucent) this.win.setOpacity(this.settings.translucent ? 0.55 : 1);
+    if (this.settings.scale !== previous.scale) {
+      this.endDrag(true); this.stopWalking();
+      const ratio = this.settings.scale / previous.scale, footX = this.body.x + this.geometry.footX, footY = this.body.y + this.geometry.footY;
+      for (const key of ['footX', 'footY', 'halfWidth']) this.geometry[key] *= ratio;
+      this.body.x = footX - this.geometry.footX; this.body.y = footY - this.geometry.footY;
+      const size = this.size(); this.win.setSize(size.width, size.height);
+      this.contain(); this.place();
+    }
+    if (!this.settings.wander || this.settings.manualMode) this.stopWalking();
+    if (this.settings.clickThrough) this.endDrag(true);
+    if (previous.gravity !== this.settings.gravity || previous.windowEdges !== this.settings.windowEdges) Object.assign(this.body, { vx: 0, vy: 0, support: null });
+    if ((!previous.wander && this.settings.wander) || (previous.manualMode && !this.settings.manualMode)) { this.manualHold = false; this.act('default', false); }
+    this.nextBehavior = Date.now() + 5000;
+    this.host.save(); this.changed();
+    if (!previous.voiceEnabled && this.settings.voiceEnabled && this.host.voices.state(this.model.id).available && !this.host.voices.state(this.model.id).cached) this.host.downloadVoice(this.id);
+  }
+  setForm(id) {
+    if (id === this.settings.form || !this.model.forms.some(form => form.id === id)) return;
+    this.endDrag(true); this.stopWalking();
+    this.settings.form = id; this.ready = false; this.supported = [];
+    this.manualHold = false; this.pose = 'default';
+    this.host.save(); this.changed(); this.send('pet:form', id);
+  }
+  loaded(data) {
+    if (!data || data.modelId !== this.model.id || data.form !== this.settings.form || !Array.isArray(data.animations)) return;
+    this.animations = data.animations.filter(item => item && typeof item.name === 'string' && Number.isFinite(item.duration) && item.duration >= 0 && item.duration <= 600).slice(0, 200);
+    this.resolvedActions = Object.fromEntries(Object.entries(data.actions || {}).filter(([action, name]) => Object.hasOwn(this.form().animations, action) && this.animations.some(animation => animation.name === name)));
+    this.supported = Object.keys(this.resolvedActions);
+    this.error = ''; this.ready = true; this.changed();
+  }
+  switchModel(id) {
+    const model = findModel(id);
+    if (!model || model.id === this.model.id) return;
+    this.endDrag(true); this.stopWalking();
+    this.model = model; this.settings.form = model.forms[0].id;
+    this.voiceError = '';
+    this.ready = false; this.error = ''; this.animations = []; this.resolvedActions = {}; this.supported = []; this.hitRects = [];
+    this.manualHold = false; this.pose = 'default'; this.body.vx = 0; this.body.vy = 0;
+    this.win.setTitle(`${model.name} · ArkPet`);
+    this.changed(); this.host.save(); this.win.webContents.reload();
+  }
+  setGeometry(data) {
+    const size = this.size();
+    if (!data || data.width !== size.width || data.height !== size.height || !['footX', 'footY', 'halfWidth'].every(key => Number.isFinite(data[key]))) return;
+    if (data.footX < 0 || data.footX > size.width || data.footY < 0 || data.footY > size.height) return;
+    const footX = this.body.x + this.geometry.footX, footY = this.body.y + this.geometry.footY;
+    this.geometry = { footX: data.footX, footY: data.footY, halfWidth: clamp(data.halfWidth, 5, size.width / 2) };
+    this.body.x = footX - this.geometry.footX; this.body.y = footY - this.geometry.footY;
+    this.contain(); this.place(); this.host.wakeLoop();
+  }
+  stopWalking() {
+    if (!this.walking) return;
+    this.walking = null; this.pose = 'default';
+    this.send('pet:motion', { walking: false }); this.host.save(); this.changed();
+  }
+  startWalking(direction, manual = true) {
+    if (this.fullscreenSuspended || !this.ready || !this.supported.includes('move') || ![-1, 1].includes(direction)) return;
+    this.endDrag(true); this.stopWalking(); this.manualHold = false;
+    if (manual) { this.paused = false; this.show(); }
+    this.walking = { direction, until: Date.now() + 2400 + Math.random() * 3600 };
+    this.pose = 'move'; this.nextBehavior = Date.now() + 15000;
+    this.send('pet:motion', { walking: true, direction }); this.changed();
+  }
+  act(action, manual = true) {
+    if (this.fullscreenSuspended || !this.ready || !this.supported.includes(action) || !Object.hasOwn(LABELS, action)) return;
+    this.endDrag(true); this.stopWalking();
+    if (manual) this.paused = false;
+    this.manualHold = manual && action !== 'default';
+    this.pose = action;
+    const duration = this.animations.find(item => item.name === this.resolvedActions[action])?.duration || 0;
+    // Autonomous poses also finish at least two cycles before another action is chosen.
+    this.nextBehavior = Date.now() + Math.max(duration * 2000, action === 'sleep' ? 25000 : 8000) + Math.random() * 12000;
+    if (manual) this.show();
+    this.send('pet:action', { action, manual }); this.changed();
+  }
+  startDrag() {
+    if (this.fullscreenSuspended || this.settings.clickThrough || this.dragging) return;
+    this.stopWalking(); this.body.vx = 0; this.body.vy = 0;
+    const cursor = screen.getCursorScreenPoint();
+    this.dragging = { cursor, lastCursor: cursor, x: this.body.x, y: this.body.y, vx: 0, vy: 0, moved: false, lastTime: Date.now() };
+    this.setIgnoring(false); this.host.wakeLoop();
+  }
+  endDrag(cancelled) {
+    if (!this.dragging) return;
+    const drag = this.dragging; this.dragging = null;
+    if (drag.moved) {
+      const recent = Date.now() - drag.lastTime < 120;
+      Object.assign(this.body, { vx: !cancelled && recent && this.settings.gravity ? drag.vx : 0, vy: !cancelled && recent && this.settings.gravity ? drag.vy : 0, support: null });
+      this.contain(); this.place();
+    }
+    this.nextBehavior = Date.now() + 8000;
+    this.send('pet:drag-end', { moved: drag.moved, cancelled: Boolean(cancelled) }); this.host.save(); this.host.wakeLoop();
+  }
+  togglePause() { this.endDrag(true); this.stopWalking(); this.paused = !this.paused; this.changed(); }
+  reload() { this.ready = false; this.error = ''; this.endDrag(true); this.stopWalking(); this.changed(); this.win.webContents.reload(); }
+
+  menu() {
+    const toggle = (label, key) => ({ label, type: 'checkbox', checked: this.settings[key], click: item => this.updateSettings({ [key]: item.checked }) });
+    return [
+      { label: `${this.model.name} · ${this.form().name}`, enabled: false },
+      { label: '打开启动器 / 控制面板', click: () => this.host.openLauncher(this.id) },
+      { label: '动作', enabled: this.ready && !this.fullscreenSuspended, submenu: [
+        ...Object.entries(LABELS).map(([action, label]) => ({ label, enabled: this.supported.includes(action), click: () => this.act(action) })),
+        { label: '向左走一会儿', enabled: this.supported.includes('move'), click: () => this.startWalking(-1) },
+        { label: '向右走一会儿', enabled: this.supported.includes('move'), click: () => this.startWalking(1) }
+      ] },
+      { label: '切换形态', enabled: this.model.forms.length > 1, submenu: this.model.forms.map(form => ({ label: form.name, type: 'radio', checked: this.settings.form === form.id, click: () => this.setForm(form.id) })) },
+      { type: 'separator' },
+      toggle('手动模式（停止自主行为）', 'manualMode'), toggle('自动散步', 'wander'), toggle('随机休息 / 特殊动作', 'autoActions'),
+      toggle('重力 / 抛掷', 'gravity'), { ...toggle('站在窗口上沿', 'windowEdges'), enabled: this.host.globalState().windowDetection.available },
+      toggle('始终置顶', 'alwaysOnTop'), toggle('半透明', 'translucent'), toggle('鼠标穿透', 'clickThrough'),
+      { label: this.paused ? '继续动画与物理' : '暂停动画与物理', click: () => this.togglePause() },
+      { type: 'separator' },
+      { label: this.userHidden ? '显示桌宠' : '隐藏桌宠', click: () => this.toggleVisible() },
+      { label: '找回桌宠', click: () => this.reset() },
+      { label: '重新加载模型', click: () => this.reload() },
+      { label: '退出这个桌宠', click: () => this.host.closePet(this.id) },
+      { label: '退出全部桌宠和启动器', click: () => this.host.quit() }
+    ];
+  }
+  contextMenu() {
+    this.endDrag(true); this.stopWalking(); this.menuOpen = true; this.setIgnoring(false);
+    Menu.buildFromTemplate(this.menu()).popup({ window: this.win, callback: () => { this.menuOpen = false; } });
+  }
+
+  isMoving() {
+    return !this.fullscreenSuspended && Boolean(this.dragging || (this.ready && !this.paused && !this.menuOpen &&
+      (this.walking || (this.settings.gravity && (!this.body.support || this.body.vx || this.body.vy)))));
+  }
+  collisionSurfaces() {
+    const environment = this.host.environment(), revision = this.host.surfaces.revision;
+    const previous = this.surfaceCache, edges = this.settings.windowEdges, footY = this.geometry.footY;
+    if (previous && previous.environment === environment && previous.revision === revision && previous.edges === edges && previous.footY === footY) return previous.values;
+    const ledges = edges ? this.host.surfaces.surfaces.filter(surface => environment.displays.some(display =>
+      surface.right > display.workArea.x && surface.left < display.workArea.x + display.workArea.width &&
+      surface.y - footY >= display.workArea.y && surface.y <= display.workArea.y + display.workArea.height)) : [];
+    const values = ledges.length ? [...environment.floors, ...ledges] : environment.floors;
+    this.surfaceCache = { environment, revision, edges, footY, values };
+    return values;
+  }
+  tick(dt, now, cursor) {
+    if (this.fullscreenSuspended || !exists(this.win) || !this.win.isVisible()) return;
+    const bounds = this.position;
+    const hovered = cursor && !this.settings.clickThrough && this.hitRects.some(rect => cursor.x >= bounds.x + rect.x && cursor.x <= bounds.x + rect.x + rect.width && cursor.y >= bounds.y + rect.y && cursor.y <= bounds.y + rect.y + rect.height);
+    this.setIgnoring(!this.menuOpen && !this.dragging && (this.settings.clickThrough || !hovered));
+    if (this.dragging) {
+      const drag = this.dragging, dx = cursor.x - drag.cursor.x, dy = cursor.y - drag.cursor.y;
+      if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; this.send('pet:dragging', true); }
+      const elapsed = Math.max(0.01, (now - drag.lastTime) / 1000);
+      drag.vx = clamp((cursor.x - drag.lastCursor.x) / elapsed, -1200, 1200);
+      drag.vy = clamp((cursor.y - drag.lastCursor.y) / elapsed, -1000, 1200);
+      drag.lastCursor = cursor; drag.lastTime = now;
+      if (drag.moved) { this.body.x = drag.x + dx; this.body.y = drag.y + dy; this.place(); }
+      return;
+    }
+    if (!this.ready || this.paused || this.menuOpen) return;
+    if (hovered && !this.settings.clickThrough) this.stopWalking();
+    if (this.walking && now >= this.walking.until) this.stopWalking();
+    const walkSpeed = this.walking ? this.walking.direction * this.settings.speed * this.settings.scale : 0;
+    const wasFalling = this.falling;
+    let moved = false;
+    if (this.settings.gravity) {
+      const surfaces = this.collisionSurfaces();
+      if (!this.body.support || walkSpeed || this.body.vx || this.body.vy || this.lastPhysicsSurfaces !== surfaces) {
+        this.falling = stepPhysics(this.body, this.geometry, surfaces, dt, walkSpeed);
+        this.lastPhysicsSurfaces = surfaces; moved = true;
+      }
+    } else {
+      this.falling = false; this.body.x += walkSpeed * dt; moved = Boolean(walkSpeed);
+    }
+    if (moved) {
+      const oldX = this.body.x;
+      this.contain();
+      if (oldX !== this.body.x && this.walking) this.stopWalking();
+      this.place();
+    }
+    if (this.falling && this.walking) this.stopWalking();
+    if (wasFalling && !this.falling) this.host.save();
+    if (this.settings.manualMode || this.manualHold || this.falling || this.walking || this.menuOpen || (hovered && !this.settings.clickThrough) || now < this.nextBehavior) return;
+    this.nextBehavior = now + 7000 + Math.random() * 11000;
+    if (['sit', 'sleep', 'relax'].includes(this.pose)) { this.act('default', false); return; }
+    const chance = Math.random();
+    if (this.settings.autoActions && chance < 0.22 && this.supported.includes('special')) { this.act('special', false); return; }
+    if (this.settings.autoActions && chance < 0.48) {
+      const rest = ['sit', 'sleep', 'relax'].filter(action => this.supported.includes(action));
+      if (rest.length) { this.act(rest[Math.floor(Math.random() * rest.length)], false); return; }
+    }
+    if (this.settings.wander && this.supported.includes('move')) {
+      this.startWalking(Math.random() < 0.5 ? -1 : 1, false);
+    }
+  }
+}
+
+module.exports = { PetWindow, DEFAULTS };

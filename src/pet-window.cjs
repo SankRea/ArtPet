@@ -78,7 +78,7 @@ class PetWindow {
     if (!exists(this.win)) return;
     const x = Math.round(this.body.x), y = Math.round(this.body.y);
     if (x !== this.position.x || y !== this.position.y) {
-      this.position = { x, y }; this.win.setPosition(x, y);
+      this.position = { x, y }; this.win.setBounds({ x, y, ...this.size() });
     }
     this.caption.syncPosition();
   }
@@ -199,11 +199,11 @@ class PetWindow {
     this.changed(); this.host.save(); this.win.webContents.reload();
   }
   setGeometry(data) {
-    const size = this.size();
-    if (!data || data.width !== size.width || data.height !== size.height || !['footX', 'footY', 'halfWidth'].every(key => Number.isFinite(data[key]))) return;
-    if (data.footX < 0 || data.footX > size.width || data.footY < 0 || data.footY > size.height) return;
+    const [contentWidth, contentHeight] = this.win.getContentSize();
+    if (!data || data.width !== contentWidth || data.height !== contentHeight || !['footX', 'footY', 'halfWidth'].every(key => Number.isFinite(data[key]))) return;
+    if (data.footX < 0 || data.footX > contentWidth || data.footY < 0 || data.footY > contentHeight) return;
     const footX = this.body.x + this.geometry.footX, footY = this.body.y + this.geometry.footY;
-    this.geometry = { footX: data.footX, footY: data.footY, halfWidth: clamp(data.halfWidth, 5, size.width / 2) };
+    this.geometry = { footX: data.footX, footY: data.footY, halfWidth: clamp(data.halfWidth, 5, contentWidth / 2) };
     this.body.x = footX - this.geometry.footX; this.body.y = footY - this.geometry.footY;
     this.contain(); this.place(); this.host.wakeLoop();
   }

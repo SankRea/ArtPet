@@ -39,7 +39,7 @@ class VoiceCaption {
     if (!this.win || this.win.isDestroyed() || data?.token !== this.data?.token || !Number.isFinite(data.height)) return;
     this.height = clamp(Math.ceil(data.height), 100, 340);
     this.syncPosition();
-    if (!this.pet.userHidden && !this.pet.fullscreenSuspended && this.pet.settings.voiceEnabled && !this.pet.paused) this.win.showInactive();
+    if (!this.pet.userHidden && !this.pet.fullscreenSuspended && this.pet.settings.voiceEnabled && this.pet.settings.voiceTextEnabled && !this.pet.paused) this.win.showInactive();
   }
   syncPosition() {
     if (!this.win || this.win.isDestroyed()) return;

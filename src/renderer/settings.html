@@ -56,7 +56,7 @@
         <input id="wander" type="checkbox">
       </div>
       <div class="setting-row">
-        <label for="autoActions">自主动作</label>
+        <label for="autoActions" title="空闲时随机切换模型支持的待机、休息和特殊动作，避免连续重复">自主动作</label>
         <input id="autoActions" type="checkbox">
       </div>
       <div class="setting-row">
@@ -82,7 +82,8 @@
       </div>
       <div class="setting-row"><label for="frameRate">动画帧率</label><select id="frameRate"><option value="15">15 FPS</option><option value="24">24 FPS</option><option value="30" selected>30 FPS · 默认</option><option value="45">45 FPS</option><option value="60">60 FPS</option></select></div>
       <div class="setting-row"><label for="voiceEnabled">启用语音</label><input id="voiceEnabled" type="checkbox"></div>
-      <p class="inline-note">启用后，单击干员随机播放一条语音；播放期间显示对应的中文台词。</p>
+      <div class="setting-row"><label for="voiceTextEnabled" title="控制桌面语音文字框的显示，不影响语音播放或设置中的台词预览">显示语音文本</label><input id="voiceTextEnabled" type="checkbox" checked></div>
+      <p class="inline-note">启用语音后，单击干员随机播放一条语音。可独立关闭语音文字框。</p>
       <details id="voice-controls" hidden open>
         <summary>语音详细设置</summary>
         <p id="voice-status" class="inline-note" role="status"></p>

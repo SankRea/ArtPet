@@ -1,6 +1,6 @@
 const bridge = window.arkpet;
 const byId = id => document.getElementById(id);
-const booleanKeys = ['wander', 'autoActions', 'manualMode', 'gravity', 'windowEdges', 'alwaysOnTop', 'translucent', 'clickThrough', 'voiceEnabled'];
+const booleanKeys = ['wander', 'autoActions', 'manualMode', 'gravity', 'windowEdges', 'alwaysOnTop', 'translucent', 'clickThrough', 'voiceEnabled', 'voiceTextEnabled'];
 let selectedId, petListSignature = '', formSignature = '', voiceSignature = '', currentData, uiBusy = false, searchTimer;
 let catalogIndex = [], modelsById = new Map();
 let voicePreviewKey = '';

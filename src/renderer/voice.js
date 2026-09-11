@@ -8,7 +8,11 @@ class ArkPetVoice {
     this.state = state;
     if (previous?.model.id !== state.model.id || previous?.voice?.id !== state.voice?.id || !this.allowed()) this.stop(true);
     if (this.gain && this.context) this.gain.gain.setValueAtTime(state.voiceVolume ?? 0.6, this.context.currentTime);
-    if (state.voiceEnabled && state.voice?.available) window.ArkPetVoiceTexts.get(state.voice);
+    if (state.voiceTextEnabled === false) this.caption(null);
+    else if (state.voiceEnabled && state.voice?.available) {
+      window.ArkPetVoiceTexts.get(state.voice);
+      if (previous?.voiceTextEnabled === false) this.refreshCaption?.();
+    }
   }
   allowed() {
     const state = this.state;
@@ -16,6 +20,7 @@ class ArkPetVoice {
   }
   stop(release = false) {
     this.generation++;
+    this.refreshCaption = null;
     this.caption(null);
     this.pending = false;
     this.abort?.abort(); this.abort = null;
@@ -43,7 +48,7 @@ class ArkPetVoice {
     const generation = this.generation, modelId = this.state.model.id;
     this.pending = true;
     const abort = new AbortController(); this.abort = abort;
-    const voice = this.state.voice, transcript = window.ArkPetVoiceTexts.get(voice);
+    const voice = this.state.voice;
     try {
       const context = this.context || new AudioContext({ latencyHint: 'playback' });
       this.context = context;
@@ -64,6 +69,7 @@ class ArkPetVoice {
       source.onended = () => {
         if (this.source !== source) return;
         source.disconnect(); this.source = null;
+        this.refreshCaption = null;
         this.caption(null);
         context.suspend().catch(() => {});
         this.releaseTimer = setTimeout(() => this.stop(true), 20000);
@@ -74,17 +80,21 @@ class ArkPetVoice {
       this.nextAutomatic = Date.now() + 60000;
       this.error(modelId, '');
       const showCaption = text => {
-        if (generation !== this.generation || this.source !== source) return;
+        if (generation !== this.generation || this.source !== source || this.state.voiceTextEnabled === false) return;
         const duration = end - clip.start - (context.currentTime - startedAt);
         if (duration <= 0) return;
         this.caption({ modelId, clipId: clip.id, playbackId: generation,
           text: text?.clips[clip.id] || text?.error || (text ? '当前语音暂无对应的中文文本。' : '正在加载语音文本…'),
           hasText: Boolean(text?.clips[clip.id]), duration });
       };
-      const cachedText = window.ArkPetVoiceTexts.peek(voice);
-      showCaption(cachedText);
-      // Text retrieval must not delay audio or overwrite the next clip's caption.
-      if (!cachedText) transcript.then(showCaption);
+      this.refreshCaption = () => {
+        if (this.state.voiceTextEnabled === false) return;
+        const cachedText = window.ArkPetVoiceTexts.peek(voice);
+        showCaption(cachedText);
+        // Text retrieval must not delay audio or overwrite the next clip's caption.
+        if (!cachedText) window.ArkPetVoiceTexts.get(voice).then(showCaption);
+      };
+      this.refreshCaption();
     } catch (error) {
       if (generation !== this.generation) return;
       this.stop(true);

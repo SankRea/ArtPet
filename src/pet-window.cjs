@@ -4,7 +4,7 @@ const { findModel } = require('./models.cjs');
 const { clamp, stepPhysics } = require('./physics.cjs');
 const { VoiceCaption } = require('./voice-caption.cjs');
 
-const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 30, voiceEnabled: false, voiceVolume: 0.6, wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
+const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 30, voiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
 const LABELS = { default: '恢复待机', interact: '交互动作', relax: '休息', sit: '坐下', sleep: '睡眠', special: '特殊动作' };
 const exists = win => win && !win.isDestroyed();
 const number = (value, fallback, min, max) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback;
@@ -26,6 +26,7 @@ class PetWindow {
     this.suspendedAt = this.fullscreenSuspended ? Date.now() : 0;
     this.hitRects = []; this.animations = []; this.supported = []; this.dragging = null; this.walking = null;
     this.pose = 'default'; this.manualHold = false; this.falling = false; this.resolvedActions = {};
+    this.actionVariants = {}; this.idleAnimations = []; this.currentAnimation = null;
     this.nextBehavior = Date.now() + 9000 + Math.random() * 4000;
     this.win = new BrowserWindow({
       ...size, x: Math.round(this.body.x), y: Math.round(this.body.y), title: `${this.model.name} · ArkPet`,
@@ -69,7 +70,7 @@ class PetWindow {
       animationNames: this.animations.map(item => item.name), ...this.host.globalState() };
   }
   changed() {
-    if (!this.settings.voiceEnabled || !this.ready || this.error || this.paused || this.userHidden || this.fullscreenSuspended) this.caption.close();
+    if (!this.settings.voiceEnabled || !this.settings.voiceTextEnabled || !this.ready || this.error || this.paused || this.userHidden || this.fullscreenSuspended) this.caption.close();
     else this.caption.syncPosition();
     this.send('pet:state', this.state()); this.host.changed();
   }
@@ -171,6 +172,18 @@ class PetWindow {
     this.animations = data.animations.filter(item => item && typeof item.name === 'string' && Number.isFinite(item.duration) && item.duration >= 0 && item.duration <= 600).slice(0, 200);
     this.resolvedActions = Object.fromEntries(Object.entries(data.actions || {}).filter(([action, name]) => Object.hasOwn(this.form().animations, action) && this.animations.some(animation => animation.name === name)));
     this.supported = Object.keys(this.resolvedActions);
+    const knownAnimations = new Map(this.animations.map(animation => [animation.name, animation]));
+    this.actionVariants = Object.fromEntries(this.supported.map(action => [action, [...new Set([
+      this.resolvedActions[action], ...(Array.isArray(data.variants?.[action]) ? data.variants[action] : [])
+    ])].filter(name => knownAnimations.has(name))]));
+    const idle = new Map();
+    for (const action of ['relax', 'sit', 'sleep', 'special', 'default']) {
+      for (const name of this.actionVariants[action] || []) {
+        if (knownAnimations.get(name).duration > 0 && !idle.has(name)) idle.set(name, { action, name });
+      }
+    }
+    this.idleAnimations = [...idle.values()];
+    this.currentAnimation = this.resolvedActions.default;
     this.error = ''; this.ready = true; this.changed();
   }
   switchModel(id) {
@@ -180,6 +193,7 @@ class PetWindow {
     this.model = model; this.settings.form = model.forms[0].id;
     this.voiceError = '';
     this.ready = false; this.error = ''; this.animations = []; this.resolvedActions = {}; this.supported = []; this.hitRects = [];
+    this.actionVariants = {}; this.idleAnimations = []; this.currentAnimation = null;
     this.manualHold = false; this.pose = 'default'; this.body.vx = 0; this.body.vy = 0;
     this.win.setTitle(`${model.name} · ArkPet`);
     this.changed(); this.host.save(); this.win.webContents.reload();
@@ -196,6 +210,7 @@ class PetWindow {
   stopWalking() {
     if (!this.walking) return;
     this.walking = null; this.pose = 'default';
+    this.currentAnimation = this.resolvedActions.default;
     this.send('pet:motion', { walking: false }); this.host.save(); this.changed();
   }
   startWalking(direction, manual = true) {
@@ -204,23 +219,26 @@ class PetWindow {
     if (manual) { this.paused = false; this.show(); }
     this.walking = { direction, until: Date.now() + 2400 + Math.random() * 3600 };
     this.pose = 'move'; this.nextBehavior = Date.now() + 15000;
+    this.currentAnimation = this.resolvedActions.move;
     this.send('pet:motion', { walking: true, direction }); this.changed();
   }
-  act(action, manual = true, voice = true) {
+  act(action, manual = true, voice = true, animation = this.resolvedActions[action]) {
     if (this.fullscreenSuspended || !this.ready || !this.supported.includes(action) || !Object.hasOwn(LABELS, action)) return;
+    if (!this.actionVariants[action]?.includes(animation)) return;
     this.endDrag(true); this.stopWalking();
     if (manual) this.paused = false;
     this.manualHold = manual && action !== 'default';
     this.pose = action;
-    const duration = this.animations.find(item => item.name === this.resolvedActions[action])?.duration || 0;
+    this.currentAnimation = animation;
+    const duration = this.animations.find(item => item.name === animation)?.duration || 0;
     // Autonomous poses also finish at least two cycles before another action is chosen.
     this.nextBehavior = Date.now() + Math.max(duration * 2000, action === 'sleep' ? 25000 : 8000) + Math.random() * 12000;
     if (manual) this.show();
-    this.send('pet:action', { action, manual, voice }); this.changed();
+    this.send('pet:action', { action, manual, voice, animation }); this.changed();
   }
   interact() {
     if (this.fullscreenSuspended || !this.ready || this.settings.clickThrough || this.dragging) return;
-    if (this.supported.includes('interact')) this.act('interact', true, false);
+    if (this.supported.includes('interact')) { this.act('interact', true, false); this.manualHold = false; }
     else { this.paused = false; this.show(); }
     const voice = this.host.voices.state(this.model.id);
     if (!this.settings.voiceEnabled || !voice.cached || !voice.clips.length) return;
@@ -232,7 +250,7 @@ class PetWindow {
   stopVoice() { this.caption.close(); this.send('pet:voice-stop'); }
   showVoiceCaption(data) {
     if (!data) { this.caption.close(); return; }
-    if (data.modelId !== this.model.id || !this.settings.voiceEnabled || !this.ready || this.paused || this.userHidden || this.fullscreenSuspended || this.dragging) return;
+    if (data.modelId !== this.model.id || !this.settings.voiceEnabled || !this.settings.voiceTextEnabled || !this.ready || this.paused || this.userHidden || this.fullscreenSuspended || this.dragging) return;
     const clip = this.host.voices.state(this.model.id).clips.find(item => item.id === data.clipId);
     if (!clip || !Number.isSafeInteger(data.playbackId) || !Number.isFinite(data.duration) || data.duration <= 0 || data.duration > clip.end - clip.start + 0.5) return;
     if (typeof data.text !== 'string' || data.text.length > 10000) return;
@@ -276,6 +294,7 @@ class PetWindow {
       toggle('重力与抛掷', 'gravity'), { ...toggle('窗口边缘停靠', 'windowEdges'), enabled: this.settings.gravity && this.host.globalState().windowDetection.available },
       toggle('始终置顶', 'alwaysOnTop'), toggle('半透明', 'translucent'), toggle('鼠标穿透', 'clickThrough'),
       { ...toggle('启用语音', 'voiceEnabled'), enabled: this.settings.voiceEnabled || this.host.voices.state(this.model.id).available },
+      toggle('显示语音文本', 'voiceTextEnabled'),
       { label: '停止语音', enabled: this.settings.voiceEnabled, click: () => this.stopVoice() },
       { label: this.paused ? '恢复活动' : '暂停活动', click: () => this.togglePause() },
       { type: 'separator' },
@@ -344,18 +363,19 @@ class PetWindow {
     }
     if (this.falling && this.walking) this.stopWalking();
     if (wasFalling && !this.falling) this.host.save();
-    if (this.settings.manualMode || this.manualHold || this.falling || this.walking || this.menuOpen || (hovered && !this.settings.clickThrough) || now < this.nextBehavior) return;
+    if (this.settings.manualMode || this.manualHold || this.falling || this.walking || this.menuOpen || now < this.nextBehavior) return;
     this.nextBehavior = now + 7000 + Math.random() * 11000;
-    if (['sit', 'sleep', 'relax'].includes(this.pose)) { this.act('default', false); return; }
-    const chance = Math.random();
-    if (this.settings.autoActions && chance < 0.22 && this.supported.includes('special')) { this.act('special', false); return; }
-    if (this.settings.autoActions && chance < 0.48) {
-      const rest = ['sit', 'sleep', 'relax'].filter(action => this.supported.includes(action));
-      if (rest.length) { this.act(rest[Math.floor(Math.random() * rest.length)], false); return; }
-    }
-    if (this.settings.wander && this.supported.includes('move')) {
+    // Deduplicate aliases (e.g. default/relax) by animation name, then avoid repeats.
+    const idle = this.settings.autoActions ? this.idleAnimations.filter(item => item.name !== this.currentAnimation) : [];
+    const canWalk = this.settings.wander && this.supported.includes('move') && !hovered;
+    if (canWalk && (!idle.length || Math.random() < 0.25)) {
       this.startWalking(Math.random() < 0.5 ? -1 : 1, false);
+      return;
     }
+    if (idle.length) {
+      const next = idle[Math.floor(Math.random() * idle.length)];
+      this.act(next.action, false, true, next.name);
+    } else if (this.pose !== 'default') this.act('default', false);
   }
 }
 

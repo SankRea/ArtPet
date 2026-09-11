@@ -6,7 +6,7 @@ const loading = document.querySelector('#loading');
 const modelUrl = filename => renderModel.assetBase + encodeURIComponent(filename);
 let app, pet, world, envelope, renderModel, fit = 1, direction = 1, bubbleTimer;
 let prefs = { paused: false, visible: true, wander: true }, pose = 'default', dragging = false, pointerPressed = false;
-let actionMap = {}, idleBounds, displayReady = false, animated = false, hitElapsed = 0, lastHitSignature = '', lastPetRect = '';
+let actionMap = {}, actionVariants = {}, idleBounds, displayReady = false, animated = false, hitElapsed = 0, lastHitSignature = '', lastPetRect = '';
 const voicePlayer = new window.ArkPetVoice(data => bridge.voiceCaption(data), (modelId, message) => bridge.voiceError(modelId, message));
 
 function say(text, duration = 3200) {
@@ -15,9 +15,9 @@ function say(text, duration = 3200) {
   bubbleTimer = setTimeout(() => { bubble.hidden = true; }, duration);
 }
 
-function play(action) {
+function play(action, animation) {
   if (!pet) return;
-  const name = actionMap[action] || actionMap.default;
+  const name = actionVariants[action]?.includes(animation) ? animation : actionMap[action] || actionMap.default;
   if (!name) return;
   pet.state.clearTracks();
   pet.skeleton.setToSetupPose();
@@ -28,10 +28,10 @@ function play(action) {
   if (displayReady) { app.render(); updateHitArea(); updatePlayback(); }
 }
 
-function applyAction({ action, manual = true, voice = true }) {
+function applyAction({ action, manual = true, voice = true, animation }) {
   if (!pet) return;
   if (!actionMap[action]) { say('当前模型不支持此动作。'); return; }
-  play(action);
+  play(action, animation);
   const clipId = { interact: '034', special: '036', relax: '010', sit: '010', sleep: '010' }[action];
   if (voice && clipId) voicePlayer.play(clipId, manual);
 }
@@ -40,7 +40,7 @@ function applyAction({ action, manual = true, voice = true }) {
 // The resulting fixed envelope prevents the character from bouncing as bounds change.
 function measureEnvelope() {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  const enabledNames = new Set(Object.values(actionMap));
+  const enabledNames = new Set(Object.values(actionVariants).flat());
   for (const animation of pet.spineData.animations.filter(item => enabledNames.has(item.name))) {
     pet.state.clearTracks(); pet.skeleton.setToSetupPose();
     pet.state.setAnimation(0, animation.name, false);
@@ -74,11 +74,11 @@ function configureForm(id) {
   prefs.form = form.id;
   const animations = pet.spineData.animations;
   const names = animations.map(animation => animation.name);
-  actionMap = {};
+  actionMap = {}; actionVariants = {};
   for (const [action, candidates] of Object.entries(form.animations)) {
     const matches = candidates.flatMap(candidate => names.filter(name => name.toLowerCase() === candidate.toLowerCase()).concat(names.filter(name => name.toLowerCase().startsWith(`${candidate.toLowerCase()}_`))));
     const name = matches.find(name => animations.find(animation => animation.name === name).duration > 0) || matches[0];
-    if (name) actionMap[action] = name;
+    if (name) { actionMap[action] = name; actionVariants[action] = [...new Set(matches)]; }
   }
   if (!actionMap.default) throw new Error('当前形态缺少待机动画。');
   play('default');
@@ -86,7 +86,7 @@ function configureForm(id) {
   idleBounds = { centerX: bounds.x + bounds.width / 2, bottom: bounds.y + bounds.height, width: bounds.width };
   envelope = measureEnvelope();
   play('default'); layout();
-  bridge.ready({ modelId: renderModel.id, form: form.id, actions: actionMap, animations: pet.spineData.animations.map(animation => ({ name: animation.name, duration: animation.duration })) });
+  bridge.ready({ modelId: renderModel.id, form: form.id, actions: actionMap, variants: actionVariants, animations: pet.spineData.animations.map(animation => ({ name: animation.name, duration: animation.duration })) });
 }
 
 function clickAction() { bridge.interact(); }

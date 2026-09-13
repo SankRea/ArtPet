@@ -178,7 +178,8 @@ function applyState(value) {
 }
 function updatePlayback() {
   if (!app) return;
-  const frameRate = [15, 24, 30, 45, 60].includes(prefs.frameRate) ? prefs.frameRate : 30;
+  const configuredFrameRate = [15, 24, 30, 45, 60].includes(prefs.frameRate) ? prefs.frameRate : 30;
+  const frameRate = pose === 'sleep' ? Math.min(configuredFrameRate, 15) : configuredFrameRate;
   if (app.ticker.maxFPS !== frameRate) app.ticker.maxFPS = frameRate;
   if (displayReady && animated && prefs.model?.id === renderModel.id && prefs.visible && !document.hidden && !prefs.paused && !prefs.fullscreenSuspended && !prefs.error && !dragging) app.start();
   else app.stop();
@@ -229,7 +230,8 @@ async function init() {
     app.ticker.add(() => {
       pet.update(Math.min(app.ticker.deltaMS / 1000, 0.1));
       hitElapsed += app.ticker.deltaMS;
-      if (hitElapsed >= 150) { hitElapsed = 0; updateHitArea(); }
+      const hitInterval = pose === 'move' ? 150 : pose === 'sleep' ? 500 : 250;
+      if (hitElapsed >= hitInterval) { hitElapsed = 0; updateHitArea(); }
     });
     displayReady = true; app.render();
     applyState(prefs);

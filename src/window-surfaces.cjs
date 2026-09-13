@@ -1,3 +1,5 @@
+const IGNORED_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd']);
+
 // Read only window geometry. Never inspect titles, contents, or control another app.
 class WindowSurfaces {
   constructor(screen) {
@@ -47,7 +49,7 @@ class WindowSurfaces {
       if (processId[0] === process.pid) return false;
       if (this.attribute(hwnd, 14, cloaked, 4) === 0 && cloaked.readUInt32LE() !== 0) return false;
       const length = this.className(hwnd, name, 256);
-      if (['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd'].includes(name.toString('utf16le', 0, Math.max(0, length) * 2))) return false;
+      if (IGNORED_CLASSES.has(name.toString('utf16le', 0, Math.max(0, length) * 2))) return false;
       const monitor = this.monitorFromWindow(hwnd, 2); // MONITOR_DEFAULTTONEAREST
       const scratch = this.fullscreenScratch;
       scratch.monitor.writeUInt32LE(40, 0); // sizeof(MONITORINFO)
@@ -78,7 +80,7 @@ class WindowSurfaces {
         if (this.attribute(hwnd, 14, cloaked, 4) === 0 && cloaked.readUInt32LE() !== 0) return 1;
         const nameLength = this.className(hwnd, name, 256);
         const className = name.toString('utf16le', 0, Math.max(0, nameLength) * 2);
-        if (['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd'].includes(className)) return 1;
+        if (IGNORED_CLASSES.has(className)) return 1;
         let rect;
         if (this.attribute(hwnd, 9, raw, 16) === 0) {
           rect = { left: raw.readInt32LE(0), top: raw.readInt32LE(4), right: raw.readInt32LE(8), bottom: raw.readInt32LE(12) };

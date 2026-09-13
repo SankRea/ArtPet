@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { PetWindow } = require('./pet-window.cjs');
-const { DEFAULT_MODEL_ID, CATALOG_COMMIT, findModel } = require('./models.cjs');
+const { DEFAULT_MODEL_ID, findModel } = require('./models.cjs');
 const { ModelLibrary } = require('./model-library.cjs');
 const { VoiceLibrary } = require('./voice-library.cjs');
 const { DownloadClient, normaliseProxy, normaliseProxyParts, splitProxy } = require('./download-client.cjs');
@@ -13,10 +13,10 @@ const { floors } = require('./physics.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const AUTO_START_NAME = 'ArkPet Surtr';
-const pets = new Map(), petTrays = new Map();
+const pets = new Map(), petsByWebContents = new Map(), petTrays = new Map();
 let launcher, launcherTray, selectedId, settingsPath, saveTimer, loopTimer, changeTimer, trayIcon, fullscreenTimer;
 let surfaces, quitting = false, lastTick = Date.now(), shortcutStatus = {};
-let library, voices, downloads, modelOperation = null, maxPets = 1, proxyUrl = '', downloadRevision = 0;
+let library, voices, downloads, modelOperation = null, maxPets = 1, proxyUrl = '';
 let environment, loopRunning = false, nextSurfaceScan = 0, launcherCatalogRevision = -1, lastSavedText;
 let dataDirectory, storageMode = 'system';
 let fullscreenActive = false;
@@ -45,12 +45,12 @@ function prepareDataDirectory() {
   }
 }
 
-function globalState() { return { shortcutStatus, downloadRevision, windowDetection: { available: surfaces?.available || false, error: surfaces?.error || '' }, fullscreen: { active: fullscreenActive, available: surfaces?.available || false, error: surfaces?.fullscreenError || '' } }; }
+function globalState() { return { shortcutStatus, windowDetection: { available: surfaces?.available || false, error: surfaces?.error || '' }, fullscreen: { active: fullscreenActive, available: surfaces?.available || false, error: surfaces?.fullscreenError || '' } }; }
 function operationState() {
   return modelOperation ? { mode: modelOperation.mode, modelId: modelOperation.modelId, name: modelOperation.name, progress: modelOperation.progress } : null;
 }
 function launcherState(includeCatalog = true) {
-  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state()), maxPets, ...splitProxy(proxyUrl), autoStart: autoStartState(), storage: { directory: dataDirectory, mode: storageMode }, operation: operationState(), catalogCommit: CATALOG_COMMIT, ...globalState() };
+  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state(pet.id === selectedId)), maxPets, ...splitProxy(proxyUrl), autoStart: autoStartState(), storage: { directory: dataDirectory, mode: storageMode }, operation: operationState(), ...globalState() };
   if (includeCatalog) { state.models = library.list(); launcherCatalogRevision = library.revision; }
   return state;
 }
@@ -70,21 +70,27 @@ function tickLoop() {
   loopTimer = null;
   const active = [...pets.values()].filter(pet => exists(pet.win) && pet.win.isVisible());
   if (quitting || fullscreenActive || !active.length) return;
+  let delay = 500;
   loopRunning = true;
   try {
     const now = Date.now(), dt = Math.min(Math.max((now - lastTick) / 1000, 0), 0.05); lastTick = now;
-    const detectors = active.filter(pet => pet.ready && !pet.paused && pet.settings.gravity && pet.settings.windowEdges);
-    if (detectors.length && now >= nextSurfaceScan) {
+    const detectors = surfaces.available ? active.filter(pet => pet.ready && !pet.paused && pet.settings.gravity && pet.settings.windowEdges) : [];
+    const movingDetector = detectors.some(pet => pet.isMoving());
+    const supportedByWindow = detectors.some(pet => pet.body.support?.kind === 'window');
+    const surfaceScanDelay = movingDetector ? 250 : supportedByWindow ? 500 : surfaces.error ? 5000 : 0;
+    if (surfaceScanDelay && now >= nextSurfaceScan) {
       const previousError = surfaces.error;
       surfaces.refresh();
-      nextSurfaceScan = now + (detectors.some(pet => pet.isMoving() || pet.body.support?.kind === 'window') ? 250 : 500);
+      nextSurfaceScan = now + surfaceScanDelay;
       if (previousError !== surfaces.error) for (const pet of active) pet.changed();
-    } else if (!detectors.length) nextSurfaceScan = 0;
-    const cursor = active.some(pet => !pet.settings.clickThrough || pet.dragging) ? screen.getCursorScreenPoint() : null;
+    } else if (!surfaceScanDelay) nextSurfaceScan = 0;
+    const needsCursor = active.some(pet => !pet.settings.clickThrough || pet.dragging);
+    const cursor = needsCursor ? screen.getCursorScreenPoint() : null;
     for (const pet of active) pet.tick(dt, now, cursor);
+    delay = active.some(pet => pet.isMoving()) ? 1000 / 30 : needsCursor ? 200 : 500;
   } finally {
     loopRunning = false;
-    if (!quitting && !fullscreenActive) loopTimer = setTimeout(tickLoop, active.some(pet => pet.isMoving()) ? 1000 / 30 : 100);
+    if (!quitting && !fullscreenActive) loopTimer = setTimeout(tickLoop, delay);
   }
 }
 function checkFullscreen() {
@@ -182,7 +188,7 @@ function addPet(modelId, saved = {}) {
   if (pets.size >= maxPets || !findModel(modelId) || !library.isCached(modelId)) return;
   const id = typeof saved.id === 'string' && !pets.has(saved.id) ? saved.id : randomUUID();
   const pet = new PetWindow({ globalState, secureWindow, changed, save, surfaces, voices, downloadVoice, environment: () => environment, wakeLoop, openLauncher, closePet, quit: () => app.quit(), closed, spawnIndex: pets.size }, { ...saved, id, modelId });
-  pets.set(id, pet); selectedId = id; changed(); save();
+  pets.set(id, pet); petsByWebContents.set(pet.webContentsId, pet); selectedId = id; changed(); save();
   return pet;
 }
 function downloadProgress(progress) {
@@ -228,8 +234,11 @@ async function selectModel({ mode, modelId, id }) {
   try {
     await library.ensure(model.id, progress => downloadProgress({ ...progress, phase: '模型' }), controller.signal);
     let voiceWarning = '';
-    try { await voices.ensure(model.id, downloadProgress, controller.signal); }
-    catch (error) { controller.signal.throwIfAborted(); voiceWarning = `模型已下载，但 PRTS 语音下载失败：${error.message}`; }
+    const voiceEnabled = mode === 'replace' && pets.get(id)?.settings.voiceEnabled;
+    if (voiceEnabled) {
+      try { await voices.ensure(model.id, downloadProgress, controller.signal); }
+      catch (error) { controller.signal.throwIfAborted(); voiceWarning = `模型已下载，但 PRTS 语音下载失败：${error.message}`; }
+    }
     controller.signal.throwIfAborted();
     if (quitting) return { ok: false, error: '程序正在退出。' };
     let pet;
@@ -263,7 +272,6 @@ function updateProxy(value) {
     proxyUrl = normaliseProxyParts(value.address, value.port);
     const saveError = saveNow();
     if (saveError) { proxyUrl = previous; return { ok: false, error: `无法保存代理设置：${saveError}` }; }
-    downloadRevision++;
     voices?.clearRequests();
     changed();
     return { ok: true, ...splitProxy(proxyUrl) };
@@ -272,6 +280,7 @@ function updateProxy(value) {
 function closed(pet) {
   if (quitting) return;
   pets.delete(pet.id);
+  petsByWebContents.delete(pet.webContentsId);
   petTrays.get(pet.id)?.destroy(); petTrays.delete(pet.id);
   if (selectedId === pet.id) selectedId = pets.keys().next().value;
   saveNow(); changed();
@@ -343,7 +352,10 @@ function syncTrays() {
   }
 }
 
-function senderPet(event) { return [...pets.values()].find(pet => pet.win?.webContents === event.sender); }
+function senderPet(event) {
+  const pet = petsByWebContents.get(event.sender.id);
+  return pet?.win?.webContents === event.sender ? pet : undefined;
+}
 function trusted(event) { return event.senderFrame === event.sender.mainFrame && (Boolean(senderPet(event)) || event.sender === launcher?.webContents); }
 function target(event, id) { return trusted(event) ? senderPet(event) || pets.get(id) : undefined; }
 function registerIpc() {

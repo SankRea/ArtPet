@@ -36,8 +36,9 @@ class PetWindow {
       transparent: true, backgroundColor: '#00000000', frame: false, resizable: false, maximizable: false,
       fullscreenable: false, minimizable: false, hasShadow: false, skipTaskbar: true, show: false,
       alwaysOnTop: this.settings.alwaysOnTop,
-      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: this.fullscreenSuspended, autoplayPolicy: 'no-user-gesture-required' }
+      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required' }
     });
+    this.webContentsId = this.win.webContents.id;
     host.secureWindow(this.win);
     const [initialX, initialY] = this.win.getPosition();
     this.position = { x: initialX, y: initialY };
@@ -66,12 +67,13 @@ class PetWindow {
   send(channel, data) { if (exists(this.win)) this.win.webContents.send(channel, data); }
   form() { return this.model.forms.find(form => form.id === this.settings.form); }
   serialise() { return { id: this.id, modelId: this.model.id, ...this.settings, x: Math.round(this.body.x), y: Math.round(this.body.y) }; }
-  state() {
-    return { ...this.serialise(), model: this.model, ready: this.ready, error: this.error, paused: this.paused,
+  state(includeVoice = true) {
+    const state = { ...this.serialise(), model: this.model, ready: this.ready, error: this.error, paused: this.paused,
       visible: exists(this.win) && this.win.isVisible(), supportedActions: this.supported, pose: this.pose,
       userHidden: this.userHidden, fullscreenSuspended: this.fullscreenSuspended,
-      voice: this.host.voices.state(this.model.id), voiceError: this.voiceError,
-      animationNames: this.animations.map(item => item.name), ...this.host.globalState() };
+      voiceError: this.voiceError };
+    if (includeVoice) state.voice = this.host.voices.state(this.model.id);
+    return state;
   }
   changed() {
     if (!this.settings.voiceEnabled || !this.settings.voiceTextEnabled || !this.ready || this.error || this.paused || this.userHidden || this.fullscreenSuspended) this.caption.close();
@@ -119,14 +121,12 @@ class PetWindow {
       this.menuOpen = false;
       this.win.hide();
       this.changed();
-      this.win.webContents.setBackgroundThrottling(true);
     } else {
       const elapsed = Date.now() - this.suspendedAt;
       this.nextBehavior += elapsed;
       this.sleepAt += elapsed;
       if (this.walking) this.walking.until += elapsed;
       this.suspendedAt = 0;
-      this.win.webContents.setBackgroundThrottling(false);
       if (!this.userHidden) { this.contain(); this.place(); this.win.showInactive(); }
       this.changed();
     }

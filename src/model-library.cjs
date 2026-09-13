@@ -18,14 +18,14 @@ class ModelLibrary {
     this.cached = new Map();
     this.revision = 0; this.catalog = null;
     let directories;
-    try { directories = new Set(fs.readdirSync(this.root)); } catch { directories = new Set(); }
-    for (const model of directories.size ? MODELS : []) {
-      if (model.bundled) continue;
-      const directory = this.cachePath(model.id);
-      if (!directories.has(path.basename(directory))) continue;
+    try { directories = fs.readdirSync(this.root, { withFileTypes: true }).filter(item => item.isDirectory() && !item.name.startsWith('.')); } catch { directories = []; }
+    for (const entry of directories) {
+      const directory = path.join(this.root, entry.name);
       try {
         const record = JSON.parse(fs.readFileSync(path.join(directory, 'source.json'), 'utf8'));
-        if (record.modelId === model.id && record.commit === CATALOG_COMMIT && Array.isArray(record.files) && record.files.length >= 3 && record.files.every(item => safeFile(item.file) && fs.statSync(path.join(directory, item.file)).size === item.bytes)) this.cached.set(model.id, record);
+        const model = findModel(record.modelId);
+        if (model && !model.bundled && directory === this.cachePath(model.id) && record.commit === CATALOG_COMMIT && Array.isArray(record.files) && record.files.length >= 3
+          && record.files.every(item => safeFile(item.file) && fs.statSync(path.join(directory, item.file)).size === item.bytes)) this.cached.set(model.id, record);
       } catch { /* Missing or incomplete cache: offer download on selection. */ }
     }
   }

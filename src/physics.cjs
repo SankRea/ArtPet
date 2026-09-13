@@ -29,13 +29,17 @@ function stepPhysics(body, geometry, surfaces, dt, walkVelocity) {
     body.y += body.vy * dt;
     const nextFootY = body.y + geometry.footY;
     const distance = nextFootY - previousFootY;
-    const landing = body.vy >= 0 && distance >= 0 ? surfaces.map(surface => {
-      if (departedSupport === surface && Math.abs(previousFootY - surface.y) <= 1) return null;
-      if (previousFootY > surface.y + 1 || nextFootY < surface.y) return null;
+    let landing = null, landingTime = Infinity;
+    if (body.vy >= 0 && distance >= 0) for (const surface of surfaces) {
+      if (departedSupport === surface && Math.abs(previousFootY - surface.y) <= 1) continue;
+      if (previousFootY > surface.y + 1 || nextFootY < surface.y) continue;
       const time = distance > 0 ? clamp((surface.y - previousFootY) / distance, 0, 1) : 1;
       const crossingX = previousFootX + (footX - previousFootX) * time;
-      return crossingX >= surface.left && crossingX <= surface.right ? { surface, time } : null;
-    }).filter(Boolean).sort((a, b) => a.time - b.time || a.surface.y - b.surface.y)[0]?.surface : null;
+      if (crossingX < surface.left || crossingX > surface.right) continue;
+      if (time < landingTime || (time === landingTime && (!landing || surface.y < landing.y))) {
+        landing = surface; landingTime = time;
+      }
+    }
     if (landing) {
       body.y = landing.y - geometry.footY;
       body.vy = 0;

@@ -18,7 +18,6 @@ contextBridge.exposeInMainWorld('arkpet', {
   setProxy: (address, port) => ipcRenderer.invoke('launcher:proxy', { address, port }),
   downloadVoice: id => ipcRenderer.invoke('launcher:voice-download', id),
   playVoice: (clipId, id) => ipcRenderer.send('pet:voice-play', { clipId, id }),
-  voiceText: id => ipcRenderer.invoke('pet:voice-text', id),
   openVoiceTextSource: id => ipcRenderer.send('pet:voice-text-source', id),
   voiceCaption: data => ipcRenderer.send('pet:voice-caption', data),
   stopVoice: id => ipcRenderer.send('pet:voice-stop', id),

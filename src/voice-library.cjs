@@ -3,80 +3,78 @@ const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
-const catalog = require('../assets/voices.json');
 const { findModel } = require('./models.cjs');
-const { VoiceTextLibrary, sourceUrl } = require('./voice-text-library.cjs');
+const { PrtsVoiceSource, parsePrtsVoicePage, sourceUrl } = require('./prts-voice-source.cjs');
+
+const MAX_CLIP_BYTES = 8 * 1024 * 1024;
+const MAX_TOTAL_BYTES = 96 * 1024 * 1024;
 const hash = value => createHash('sha256').update(value).digest('hex');
-const BUNDLED_VOICE = 'char_350_surtr';
 
 class VoiceLibrary {
   constructor(userData, downloads) {
     this.root = path.join(userData, 'voices');
     this.downloads = downloads;
-    this.texts = new VoiceTextLibrary(userData, downloads);
-    this.entries = new Map(); this.cached = new Map(); this.states = new Map();
+    this.source = new PrtsVoiceSource(userData, downloads);
+    this.records = new Map(); this.states = new Map(); this.ids = new Map();
     let directories;
-    try { directories = new Set(fs.readdirSync(this.root)); } catch { directories = new Set(); }
-    for (const [id, entry] of Object.entries(catalog.entries)) {
-      if (!/^char_[\w#-]+$/.test(id) || !['voice', 'voice_cn', 'voice_kr', 'voice_en', 'voice_custom'].includes(entry.directory)) continue;
-      if (!Number.isInteger(entry.size) || entry.size <= 0 || entry.size > 32 * 1024 * 1024 || !Number.isFinite(entry.duration)) continue;
-      const clips = entry.clips.filter(clip => /^\d{3}$/.test(clip.id) && Number.isFinite(clip.start) && Number.isFinite(clip.end) && clip.start >= 0 && clip.end > clip.start && clip.end <= entry.duration);
-      if (!clips.length) continue;
-      const voice = { ...entry, id, clips, file: `${id}.ogg` };
-      this.entries.set(id, voice);
-      const directory = this.directory(voice);
-      if (id !== BUNDLED_VOICE && !directories.has(path.basename(directory))) continue;
+    try { directories = fs.readdirSync(this.root, { withFileTypes: true }).filter(item => item.isDirectory()).map(item => item.name); } catch { directories = []; }
+    for (const name of directories) {
+      const directory = path.join(this.root, name);
       try {
         const record = JSON.parse(fs.readFileSync(path.join(directory, 'source.json'), 'utf8'));
-        if (record.voiceId === id && record.language === voice.language && record.commit === catalog.commit && record.file === voice.file && record.bytes === voice.size && /^[a-f0-9]{64}$/.test(record.sha256) && fs.statSync(path.join(directory, voice.file)).size === voice.size) this.cached.set(id, record);
-      } catch { /* Only the selected operator can trigger a missing voice download. */ }
+        if (!this.validRecord(record, directory)) continue;
+        this.records.set(record.operatorName, record);
+        this.ids.set(this.id(record.operatorName), record.operatorName);
+      } catch { /* Old, missing or incomplete voice caches are ignored. */ }
     }
   }
-  directory(voice) {
-    if (voice.id === BUNDLED_VOICE) return path.join(__dirname, '..', 'assets', 'voices', 'surtr');
-    return path.join(this.root, hash(`${catalog.commit}:${voice.id}:${voice.language}`).slice(0, 24));
+  id(name) { return `prts-${hash(name).slice(0, 24)}`; }
+  directory(name) { return path.join(this.root, this.id(name)); }
+  validRecord(record, directory) {
+    return record?.version === 1 && record.provider === 'PRTS Wiki' && typeof record.operatorName === 'string' && record.operatorName.length <= 100
+      && path.basename(directory) === this.id(record.operatorName)
+      && record.source === sourceUrl(record.operatorName) && typeof record.language === 'string' && record.language.length <= 50
+      && Array.isArray(record.clips) && record.clips.length > 0 && record.clips.length <= 80
+      && record.clips.every(clip => /^\d{3}$/.test(clip.id) && clip.file === `${clip.id}.mp3` && typeof clip.label === 'string' && clip.label.length <= 100
+        && typeof clip.text === 'string' && clip.text.length > 0 && clip.text.length <= 10000 && Number.isInteger(clip.bytes) && clip.bytes > 0 && clip.bytes <= MAX_CLIP_BYTES
+        && /^[a-f\d]{64}$/.test(clip.sha256) && fs.statSync(path.join(directory, clip.file)).size === clip.bytes);
   }
   find(modelId) {
     const model = findModel(modelId);
-    if (!model) return null;
-    const exact = this.entries.get(`char_${model.id}`);
-    const base = model.id.match(/^(\d+_[a-zA-Z0-9]+)/)?.[1];
-    return exact || this.entries.get(`char_${base}`) || null;
-  }
-  async text(modelId) {
-    const voice = this.find(modelId), model = findModel(modelId);
-    if (!voice || !model) return { error: '当前干员暂无语音资源。' };
-    return { ...await this.texts.get(model.name), operatorName: model.name, voiceId: voice.id, directory: voice.directory };
+    return model ? { id: this.id(model.name), operatorName: model.name } : null;
   }
   textSource(modelId) { const model = findModel(modelId); return model ? sourceUrl(model.name) : null; }
-  clearTextRequests() { this.texts.clear(); }
+  clearRequests() { this.source.clear(); }
+  invalidate(modelId) {
+    const entry = this.find(modelId);
+    if (!entry) return;
+    this.records.delete(entry.operatorName); this.ids.delete(entry.id); this.states.clear();
+  }
   state(modelId) {
-    const voice = this.find(modelId);
-    if (!voice) return { available: false, cached: false, clips: [] };
-    if (!this.states.has(voice.id)) this.states.set(voice.id, {
-      available: true, cached: this.cached.has(voice.id), id: voice.id, language: voice.languageLabel,
-      url: `arkpet://app/voices/${encodeURIComponent(voice.id)}/${encodeURIComponent(voice.file)}`,
-      clips: voice.clips
+    const entry = this.find(modelId);
+    if (!entry) return { available: false, cached: false, clips: [] };
+    const record = this.records.get(entry.operatorName);
+    const signature = `${entry.id}:${record?.revision || 0}:${record?.clips.length || 0}`;
+    if (!this.states.has(signature)) this.states.set(signature, {
+      available: true, cached: Boolean(record), id: entry.id, language: record?.language || '', source: sourceUrl(entry.operatorName),
+      clips: (record?.clips || []).map(clip => ({ id: clip.id, label: clip.label, text: clip.text, url: `arkpet://app/voices/${entry.id}/${clip.file}` }))
     });
-    return this.states.get(voice.id);
+    return this.states.get(signature);
   }
   resolve(id, file) {
-    const voice = this.entries.get(id);
-    return voice && this.cached.has(id) && file === voice.file ? path.join(this.directory(voice), file) : null;
+    const operatorName = this.ids.get(id), record = operatorName && this.records.get(operatorName);
+    return record?.clips.some(clip => clip.file === file) ? path.join(this.directory(operatorName), file) : null;
   }
   async ensure(modelId, progress, signal) {
-    const voice = this.find(modelId);
-    if (!voice) return null;
-    if (this.cached.has(voice.id)) {
-      if (voice.id === BUNDLED_VOICE) return voice;
-      const digest = createHash('sha256');
-      try {
-        for await (const chunk of fs.createReadStream(path.join(this.directory(voice), voice.file), { signal })) digest.update(chunk);
-        if (digest.digest('hex') === this.cached.get(voice.id).sha256) return voice;
-      } catch { signal?.throwIfAborted(); }
-      this.cached.delete(voice.id); this.states.delete(voice.id);
-    }
-    if (voice.id === BUNDLED_VOICE) throw new Error('内置史尔特尔语音文件缺失，请恢复 assets/voices/surtr。');
+    const entry = this.find(modelId);
+    if (!entry) return null;
+    const existing = this.records.get(entry.operatorName);
+    if (existing && this.validRecord(existing, this.directory(entry.operatorName))) return entry;
+    if (existing) { this.records.delete(entry.operatorName); this.ids.delete(entry.id); this.states.clear(); }
+    const page = await this.source.get(entry.operatorName, signal);
+    signal?.throwIfAborted();
+    if (page.error) throw new Error(page.error);
+    const manifest = parsePrtsVoicePage(page.html, page.source);
     await fs.promises.mkdir(this.root, { recursive: true });
     const temporary = await fs.promises.mkdtemp(path.join(this.root, '.download-'));
     const remove = async directory => {
@@ -84,32 +82,47 @@ class VoiceLibrary {
       await fs.promises.rm(directory, { recursive: true, force: true });
     };
     try {
-      const url = `https://raw.githubusercontent.com/isHarryh/Ark-Voice/${catalog.commit}/${voice.directory}/${encodeURIComponent(voice.file)}`;
-      const destinationFile = path.join(temporary, voice.file);
-      const record = await this.downloads.fetch(url, { signal, onProxy: () => progress({ phase: '语音', file: voice.file, index: 0, total: 1, received: 0, expected: voice.size, proxied: true }) }, async (response, attemptSignal, touch, proxied) => {
-        if (!response.ok || !response.body) throw new Error(`语音下载失败（HTTP ${response.status}）。`);
-        await fs.promises.rm(destinationFile, { force: true });
-        let received = 0, prefix = Buffer.alloc(0);
-        const digest = createHash('sha256');
-        const inspect = new Transform({ transform(chunk, _encoding, callback) {
-          touch(); received += chunk.length;
-          if (received > voice.size) { callback(new Error('语音文件大小与目录不符。')); return; }
-          if (prefix.length < 4) prefix = Buffer.concat([prefix, chunk.subarray(0, 4 - prefix.length)]);
-          digest.update(chunk); progress({ phase: '语音', file: voice.file, index: 0, total: 1, received, expected: voice.size, proxied });
-          callback(null, chunk);
-        } });
-        await pipeline(Readable.fromWeb(response.body), inspect, fs.createWriteStream(destinationFile, { flags: 'wx' }), { signal: attemptSignal });
-        if (received !== voice.size || prefix.toString('ascii') !== 'OggS') throw new Error('语音文件不完整或格式无效。');
-        return { voiceId: voice.id, language: voice.language, commit: catalog.commit, repository: catalog.repository, file: voice.file, bytes: received, sha256: digest.digest('hex') };
-      });
+      let bytesTotal = 0;
+      const clips = [];
+      for (let index = 0; index < manifest.clips.length; index++) {
+        signal?.throwIfAborted();
+        const clip = manifest.clips[index], file = `${clip.id}.mp3`, destinationFile = path.join(temporary, file);
+        const downloaded = await this.downloads.fetch(clip.url, {
+          signal, directTimeout: 10000, proxyTimeout: 60000,
+          onProxy: () => progress({ phase: '语音', file: clip.label, index, total: manifest.clips.length, received: 0, expected: 0, proxied: true })
+        }, async (response, attemptSignal, touch, proxied) => {
+          if (!response.ok || !response.body) throw new Error(`下载“${clip.label}”失败（HTTP ${response.status}）。`);
+          const expected = Number(response.headers.get('content-length')) || 0;
+          if (expected > MAX_CLIP_BYTES || bytesTotal + expected > MAX_TOTAL_BYTES) throw new Error('语音资源大小超出限制。');
+          let received = 0, prefix = Buffer.alloc(0);
+          const digest = createHash('sha256');
+          const inspect = new Transform({ transform(chunk, _encoding, callback) {
+            touch(); received += chunk.length;
+            if (received > MAX_CLIP_BYTES || bytesTotal + received > MAX_TOTAL_BYTES) { callback(new Error('语音资源大小超出限制。')); return; }
+            if (prefix.length < 3) prefix = Buffer.concat([prefix, chunk.subarray(0, 3 - prefix.length)]);
+            digest.update(chunk);
+            progress({ phase: '语音', file: clip.label, index, total: manifest.clips.length, received, expected, proxied });
+            callback(null, chunk);
+          } });
+          await pipeline(Readable.fromWeb(response.body), inspect, fs.createWriteStream(destinationFile, { flags: 'wx' }), { signal: attemptSignal });
+          const mp3 = prefix.toString('ascii') === 'ID3' || (prefix[0] === 0xff && (prefix[1] & 0xe0) === 0xe0);
+          if (!received || !mp3) throw new Error(`“${clip.label}”不是有效的 MP3 文件。`);
+          return { bytes: received, sha256: digest.digest('hex') };
+        });
+        bytesTotal += downloaded.bytes;
+        clips.push({ id: clip.id, label: clip.label, text: clip.text, file, bytes: downloaded.bytes, sha256: downloaded.sha256, sourceAudio: clip.url });
+        progress({ phase: '语音', file: clip.label, index: index + 1, total: manifest.clips.length, received: 0, expected: 0 });
+      }
+      const record = { version: 1, provider: 'PRTS Wiki', operatorName: entry.operatorName, source: manifest.source, revision: manifest.revision,
+        voiceKey: manifest.voiceKey, language: manifest.language, fetchedAt: new Date().toISOString(), clips };
       await fs.promises.writeFile(path.join(temporary, 'source.json'), JSON.stringify(record, null, 2));
       signal?.throwIfAborted();
-      const destination = this.directory(voice);
+      const destination = this.directory(entry.operatorName);
       await remove(destination); await fs.promises.rename(temporary, destination);
-      this.cached.set(voice.id, record); this.states.delete(voice.id);
-      progress({ phase: '语音', file: voice.file, index: 1, total: 1, received: 0, expected: 0 });
-      return voice;
+      this.records.set(entry.operatorName, record); this.ids.set(entry.id, entry.operatorName); this.states.clear();
+      return entry;
     } finally { await remove(temporary); }
   }
 }
+
 module.exports = { VoiceLibrary };

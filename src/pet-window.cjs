@@ -252,10 +252,9 @@ class PetWindow {
     if (!data) { this.caption.close(); return; }
     if (data.modelId !== this.model.id || !this.settings.voiceEnabled || !this.settings.voiceTextEnabled || !this.ready || this.paused || this.userHidden || this.fullscreenSuspended || this.dragging) return;
     const clip = this.host.voices.state(this.model.id).clips.find(item => item.id === data.clipId);
-    if (!clip || !Number.isSafeInteger(data.playbackId) || !Number.isFinite(data.duration) || data.duration <= 0 || data.duration > clip.end - clip.start + 0.5) return;
-    if (typeof data.text !== 'string' || data.text.length > 10000) return;
+    if (!clip || !Number.isSafeInteger(data.playbackId) || !Number.isFinite(data.duration) || data.duration <= 0 || data.duration > 180) return;
     this.caption.show({ name: this.model.name, label: clip.label === '戳一下' ? '点击交互' : clip.label,
-      text: data.text || '当前语音暂无对应的中文文本。', hasText: data.hasText === true, duration: data.duration, playbackId: data.playbackId });
+      text: clip.text, hasText: true, duration: data.duration, playbackId: data.playbackId });
   }
   startDrag() {
     if (this.fullscreenSuspended || this.settings.clickThrough || this.dragging) return;

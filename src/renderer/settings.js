@@ -3,7 +3,7 @@ const byId = id => document.getElementById(id);
 const booleanKeys = ['wander', 'autoActions', 'manualMode', 'gravity', 'windowEdges', 'alwaysOnTop', 'translucent', 'clickThrough', 'voiceEnabled', 'idleVoiceEnabled', 'voiceTextEnabled'];
 let selectedId, petListSignature = '', formSignature = '', voiceSignature = '', currentData, uiBusy = false, searchTimer;
 let catalogIndex = [], modelsById = new Map();
-let voicePreviewKey = '', voiceTextRevision = 0;
+let voicePreviewKey = '';
 
 function selectSettingsTab(name, focus = false) {
   const tabs = [...document.querySelectorAll('[data-settings-tab]')];
@@ -58,20 +58,17 @@ function updateVoicePreview() {
     byId('voice-text').textContent = pet?.voice?.available ? '请选择语音片段。' : '当前干员暂无可用语音。';
     return;
   }
-  const key = `${voiceTextRevision}:${pet.id}:${pet.voice.id}:${clipId}`;
+  const key = `${pet.id}:${pet.voice.id}:${clipId}`;
   if (key === voicePreviewKey) return;
   voicePreviewKey = key;
-  byId('voice-text').textContent = '正在加载语音文本…';
-  window.ArkPetVoiceTexts.get(pet.voice, pet.id).then(result => {
-    if (voicePreviewKey !== key) return;
-    byId('voice-text').textContent = result.clips[clipId] || result.error || '当前语音暂无对应的中文文本。';
-  });
+  const clip = pet.voice.clips.find(item => item.id === clipId);
+  byId('voice-text').textContent = clip?.text || '当前语音暂无对应的中文文本。';
 }
 async function request(work, success) {
   uiBusy = true; updateButtons(); byId('operation-message').textContent = '';
   try {
     const result = await work();
-    byId('operation-message').textContent = result.ok ? success : result.error;
+    byId('operation-message').textContent = result.ok ? result.warning || success : result.error;
   } catch (error) { byId('operation-message').textContent = error.message; }
   finally { uiBusy = false; updateButtons(); }
 }
@@ -88,8 +85,9 @@ function render(data) {
   currentData = { ...data, models: data.models || currentData?.models || [] };
   if (catalogChanged) {
     modelsById = new Map(data.models.map(model => [model.id, model]));
-    catalogIndex = data.models.map(model => ({ value: model.id, label: `${model.name} · ${model.subtitle}${model.cached ? ' [已缓存]' : ''}`,
-      search: `${model.name} ${model.appellation} ${model.subtitle}`.toLocaleLowerCase() }));
+    catalogIndex = data.models.map((model, order) => ({ value: model.id, label: `${model.name} · ${model.subtitle}${model.cached ? ' [已下载]' : ''}`,
+      search: `${model.name} ${model.appellation} ${model.subtitle}`.toLocaleLowerCase(), cached: model.cached, order }))
+      .sort((a, b) => Number(b.cached) - Number(a.cached) || a.order - b.order);
   }
   const signature = data.pets.map(pet => `${pet.id}:${pet.model.id}`).join(',');
   if (signature !== petListSignature) {
@@ -102,6 +100,13 @@ function render(data) {
   if (document.activeElement !== byId('max-pets')) byId('max-pets').value = data.maxPets;
   if (document.activeElement !== byId('proxy-address')) byId('proxy-address').value = data.proxyAddress || '';
   if (document.activeElement !== byId('proxy-port')) byId('proxy-port').value = data.proxyPort || '';
+  const storageMessages = {
+    portable: '便携版的设置与下载数据保存在程序旁，可随程序文件夹一起移动。',
+    fallback: '程序所在目录不可写，设置与下载数据已改存到当前用户目录。',
+    system: '开发运行时使用当前用户目录；便携版发布后会使用程序旁的 ArkPet-data 文件夹。'
+  };
+  byId('storage-description').textContent = storageMessages[data.storage?.mode] || storageMessages.system;
+  byId('storage-path').textContent = data.storage?.directory || '';
   byId('pet-count').textContent = `${data.pets.length} / ${data.maxPets}`;
   renderOperation(data.operation);
   updateButtons();
@@ -125,14 +130,14 @@ function render(data) {
   byId('frameRate').value = state.frameRate;
   const voice = state.voice;
   byId('voiceEnabled').disabled = !voice?.available && !state.voiceEnabled;
-  const nextVoiceSignature = voice?.id || '';
+  const nextVoiceSignature = voice ? `${voice.id}:${voice.cached}:${voice.clips.map(clip => clip.id).join(',')}` : '';
   if (nextVoiceSignature !== voiceSignature) {
     voiceSignature = nextVoiceSignature;
     options(byId('voice-clip'), (voice?.clips || []).map(clip => ({ value: clip.id, label: clip.label === '戳一下' ? '点击交互' : clip.label || clip.id })));
     if (voice?.clips.some(clip => clip.id === '034')) byId('voice-clip').value = '034';
   }
   byId('voice-controls').hidden = !state.voiceEnabled;
-  byId('voice-status').textContent = state.voiceError || (!voice?.available ? 'Ark-Voice 暂未收录此干员语音。' : voice.cached ? `${voice.language} · 已下载` : `${voice.language} · 尚未下载，可点击下载或重试。`);
+  byId('voice-status').textContent = state.voiceError || (!voice?.available ? '当前干员无法读取 PRTS 语音。' : voice.cached ? `${voice.language} · PRTS Wiki · 已下载` : 'PRTS Wiki 语音尚未下载，可点击下载或重试。');
   byId('download-voice').hidden = !voice?.available || voice.cached;
   byId('voiceVolume').value = Math.round(state.voiceVolume * 100);
   byId('voiceVolume-value').textContent = `${Math.round(state.voiceVolume * 100)}%`;
@@ -185,7 +190,7 @@ byId('save-proxy').addEventListener('click', () => request(async () => {
   if (result.ok) {
     byId('proxy-address').value = result.proxyAddress;
     byId('proxy-port').value = result.proxyPort;
-    window.ArkPetVoiceTexts.clear(); voiceTextRevision++; voicePreviewKey = ''; updateVoicePreview();
+    voicePreviewKey = ''; updateVoicePreview();
   }
   return result;
 }, '下载代理设置已保存。'));

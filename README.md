@@ -1,18 +1,17 @@
 ﻿# ArtPet · 明日方舟桌面宠物
 
-基于 Electron、PixiJS 和 Spine 的 Windows 桌面宠物。默认内置**史尔特尔泳装小人（珊瑚海岸/IX）**，支持循环动画、鼠标互动、重力与窗口停靠，以及按需下载其他干员的模型和语音。
+基于 Electron、PixiJS 和 Spine 的 Windows 桌面宠物。默认内置**史尔特尔泳装小人（珊瑚海岸/IX）**，支持循环动画、鼠标互动、重力与窗口停靠，以及按需下载其他干员的模型和成对语音记录。
 
 仓库名称为 ArtPet，应用名称及本地数据目录沿用 `ArkPet Surtr`。本项目为非官方作品，与《明日方舟》官方无隶属关系。
 
 ## 鸣谢
 
-特别感谢 **[isHarryh](https://github.com/isHarryh)** 整理并分享的模型与语音资源。本项目实际使用了以下仓库和组件，在此向作者、维护者及贡献者致谢：
+特别感谢 **[isHarryh](https://github.com/isHarryh)** 整理并分享的模型资源，以及 PRTS Wiki 编辑者整理语音记录。本项目实际使用了以下来源和组件：
 
 | 作者／维护组织 | 仓库 | 本项目中的用途 |
 | --- | --- | --- |
 | [isHarryh](https://github.com/isHarryh) | [Ark-Models](https://github.com/isHarryh/Ark-Models) | 史尔特尔泳装模型、干员与时装目录，以及其他干员模型的按需下载来源 |
-| [isHarryh](https://github.com/isHarryh) | [Ark-Voice](https://github.com/isHarryh/Ark-Voice) | 干员语音、语种信息和语音片段时间索引 |
-| PRTS Wiki 编辑者 | [PRTS Wiki](https://prts.wiki/) | 干员语音对应的中文文本，按需获取并缓存 |
+| PRTS Wiki 编辑者 | [PRTS Wiki](https://prts.wiki/) | 同一记录内的干员语音、片段名称与中文文本，按需获取并缓存 |
 | [Electron](https://github.com/electron) | [electron](https://github.com/electron/electron) | 桌面应用运行环境、透明窗口、系统托盘与快捷键 |
 | [PixiJS](https://github.com/pixijs) | [pixijs](https://github.com/pixijs/pixijs) | 小人模型的二维图形渲染 |
 | [pixijs-userland](https://github.com/pixijs-userland) | [spine（pixi-spine）](https://github.com/pixijs-userland/spine) | Spine 模型加载与动画播放 |
@@ -20,7 +19,7 @@
 | [Koromix](https://github.com/Koromix) | [koffi](https://github.com/Koromix/koffi) | 调用 Windows 窗口接口，实现窗口边沿检测和全屏检测 |
 | [electron-userland](https://github.com/electron-userland) | [electron-builder](https://github.com/electron-userland/electron-builder) | Windows 便携版打包 |
 
-感谢上海鹰角网络有限公司及《明日方舟》的创作者。角色模型、贴图和语音的版权归原权利人所有；Ark-Models 与 Ark-Voice 的上游声明禁止将其素材用于商业用途或损害版权方利益。具体来源、固定提交、校验记录与组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+感谢上海鹰角网络有限公司及《明日方舟》的创作者。角色模型、贴图、游戏语音和台词的版权归原权利人所有。具体来源、缓存记录与组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 功能
 
@@ -94,7 +93,7 @@ PixiJS 固定在 `7.4.3`，与 `pixi-spine 4.0.6` 配套使用。内置模型为
 2. 选择干员／时装，点击“更换当前干员”；未缓存时会提示先下载。
 3. 等待所选模型及对应语音下载完成。更换后保留当前桌宠的位置、大小和设置。
 
-仓库只内置史尔特尔泳装模型及她的一份日语语音。`assets/operators.json` 保存 **936 个干员／时装条目的目录快照**，`assets/voices.json` 保存对应语音元数据；浏览目录不会下载其他模型或音频。
+仓库只内置史尔特尔泳装模型，不内置人物语音或台词。`assets/operators.json` 保存 **936 个干员／时装条目的目录快照**；浏览目录不会下载其他模型、音频或文本。
 
 下载固定到上游提交，避免模型文件版本不一致，并校验文件大小与 SHA-256。已缓存资源可离线复用，取消或失败时保留当前干员。目录不是自动同步的实时列表，具体收录以本地快照为准。
 
@@ -106,11 +105,11 @@ PixiJS 固定在 `7.4.3`，与 `pixi-spine 4.0.6` 配套使用。内置模型为
 
 语音播放时，独立对话框显示干员名称、片段名称和对应的中文台词；对话框跟随桌宠位置，不改变模型大小，也不拦截鼠标操作。长台词在播放期间自动滚动。播放结束、停止播放、关闭语音、隐藏桌宠、切换干员或进入全屏休眠时，对话框同步关闭。
 
-中文文本按需从 [PRTS Wiki](https://prts.wiki/) 的干员语音记录页读取，并按音频来源、时装版本和片段编号匹配。文本缓存保留在本地，30 天后尝试更新，网络不可用时可使用已有缓存。首次获取文本需要网络；获取失败或未匹配到对应文本时显示提示，音频播放不受影响。不生成角色台词，也不将基础语音文本用于未匹配的时装专属语音。
+语音列表、片段名称、音频路径和中文文本按需从 [PRTS Wiki](https://prts.wiki/) 的干员语音记录页读取。程序只保留同时存在音频与中文文本的记录，并将同一条记录一起写入本地缓存，不再通过另一个语音库的编号和时间轴拼接。页面缓存保留 30 天；已下载的语音可以离线使用。
 
-下载时优先匹配该时装的语音，缺少时使用同一干员的基础语音；优先日语，其后依次选择普通话、英语、韩语和个性化语音，每个条目只下载一种语言。实际语种会在界面显示，目前没有语种切换选项。上游未收录语音时仍可使用模型。
+同一干员的所有模型和时装都按干员名称共用 PRTS 语音页及缓存，不再用皮肤模型 ID 寻找文本。语种优先日语，其后依次选择普通话、英语、韩语及页面提供的首个可用语种，实际语种会在界面显示。PRTS 未收录语音时仍可使用模型。
 
-旧版缓存模型缺少语音时，开启语音只补下载当前干员，也可点击“下载语音”重试。同一干员的多个时装可以共享基础语音缓存。
+旧版 Ark-Voice 缓存不会继续使用。开启语音时会下载当前干员的 PRTS 语音，也可点击“下载语音”重试。
 
 ## 配置与本地数据
 
@@ -124,14 +123,16 @@ PixiJS 固定在 `7.4.3`，与 `pixi-spine 4.0.6` 配套使用。内置模型为
 
 在设置中修改后的值优先于默认配置。达到上限后仍可更换当前干员；降低上限前需先退出多余桌宠。
 
-| 路径 | 内容 |
-| --- | --- |
-| `%APPDATA%\ArkPet Surtr\settings.json` | 用户设置、桌宠状态与数量上限 |
-| `%APPDATA%\ArkPet Surtr\models\` | 按需下载的模型缓存 |
-| `%APPDATA%\ArkPet Surtr\voices\` | 按需下载的语音缓存 |
-| `%APPDATA%\ArkPet Surtr\voice-texts\` | PRTS 语音文本页面缓存 |
+便携版将设置与下载数据保存在可执行文件同级的 `ArkPet-data\` 目录，可随整个程序文件夹一起移动。源码开发运行使用 `%APPDATA%\ArkPet Surtr\`；如果便携版所在目录不可写，也会回退到这个用户目录。首次使用新版便携存储且目录中没有配置时，程序会读取旧用户目录中的设置并写入新位置。
 
-这些用户数据存放在仓库之外。`.gitignore` 排除了依赖、构建输出、缓存、日志和本地环境文件；内置素材、来源记录、依赖锁文件与默认配置保留在版本管理中。
+| 数据目录内路径 | 内容 |
+| --- | --- |
+| `settings.json` | 用户设置、桌宠状态与数量上限 |
+| `models\` | 按需下载的模型缓存 |
+| `voices\` | PRTS 成对语音记录及音频缓存 |
+| `prts-pages\` | PRTS 语音记录页面缓存 |
+
+这些用户数据不会打包进便携版可执行文件。`.gitignore` 排除了依赖、构建输出、缓存、日志和本地环境文件；内置素材、来源记录、依赖锁文件与默认配置保留在版本管理中。
 
 ## 全屏休眠与资源占用
 
@@ -162,14 +163,14 @@ npm run package:win
 ## 项目结构
 
 ```text
-assets/                    干员与语音目录、内置史尔特尔素材、来源和许可
+assets/                    干员目录、内置史尔特尔模型、来源和许可
 src/main.cjs               应用入口、设置窗口、托盘与全屏休眠调度
 src/pet-window.cjs         桌宠窗口、交互与自主行为
 src/physics.cjs            重力与移动
 src/window-surfaces.cjs    Windows 窗口边沿及全屏检测
 src/model-library.cjs      模型下载、缓存与校验
-src/voice-library.cjs      语音匹配、下载与缓存
-src/voice-text-library.cjs PRTS 语音文本按需获取与缓存
+src/voice-library.cjs      PRTS 成对语音记录的下载与缓存
+src/prts-voice-source.cjs  PRTS 页面获取及语音记录解析
 src/voice-caption.cjs      语音对话框及位置同步
 src/renderer/              设置界面、模型渲染与语音播放
 config.json                默认配置

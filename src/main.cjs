@@ -17,17 +17,39 @@ let launcher, launcherTray, selectedId, settingsPath, saveTimer, loopTimer, chan
 let surfaces, quitting = false, lastTick = Date.now(), shortcutStatus = {};
 let library, voices, downloads, modelOperation = null, maxPets = 1, proxyUrl = '', downloadRevision = 0;
 let environment, loopRunning = false, nextSurfaceScan = 0, launcherCatalogRevision = -1, lastSavedText;
+let dataDirectory, storageMode = 'system';
 let fullscreenActive = false;
 const exists = win => win && !win.isDestroyed();
 protocol.registerSchemesAsPrivileged([{ scheme: 'arkpet', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.setName('ArkPet Surtr');
+
+function prepareDataDirectory() {
+  const systemDirectory = app.getPath('userData');
+  const portableDirectory = process.env.PORTABLE_EXECUTABLE_DIR;
+  if (!app.isPackaged || !portableDirectory || !path.isAbsolute(portableDirectory)) {
+    dataDirectory = systemDirectory;
+    storageMode = 'system';
+    return;
+  }
+  const preferred = path.join(portableDirectory, 'ArkPet-data');
+  try {
+    fs.mkdirSync(preferred, { recursive: true });
+    fs.accessSync(preferred, fs.constants.R_OK | fs.constants.W_OK);
+    dataDirectory = preferred;
+    storageMode = 'portable';
+  } catch (error) {
+    console.warn(`便携版数据目录不可用，改用系统用户数据目录：${error.message}`);
+    dataDirectory = systemDirectory;
+    storageMode = 'fallback';
+  }
+}
 
 function globalState() { return { shortcutStatus, downloadRevision, windowDetection: { available: surfaces?.available || false, error: surfaces?.error || '' }, fullscreen: { active: fullscreenActive, available: surfaces?.available || false, error: surfaces?.fullscreenError || '' } }; }
 function operationState() {
   return modelOperation ? { mode: modelOperation.mode, modelId: modelOperation.modelId, name: modelOperation.name, progress: modelOperation.progress } : null;
 }
 function launcherState(includeCatalog = true) {
-  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state()), maxPets, ...splitProxy(proxyUrl), operation: operationState(), catalogCommit: CATALOG_COMMIT, ...globalState() };
+  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state()), maxPets, ...splitProxy(proxyUrl), storage: { directory: dataDirectory, mode: storageMode }, operation: operationState(), catalogCommit: CATALOG_COMMIT, ...globalState() };
   if (includeCatalog) { state.models = library.list(); launcherCatalogRevision = library.revision; }
   return state;
 }
@@ -78,21 +100,24 @@ function checkFullscreen() {
 }
 function saveNow() {
   clearTimeout(saveTimer);
-  if (!settingsPath) return;
+  if (!settingsPath) return '设置保存路径尚未准备好。';
   try {
     const contents = JSON.stringify({ version: 4, maxPets, ...splitProxy(proxyUrl), selectedId, pets: [...pets.values()].map(pet => pet.serialise()) }, null, 2);
-    if (contents === lastSavedText) return;
+    if (contents === lastSavedText) return '';
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(`${settingsPath}.tmp`, contents);
     fs.renameSync(`${settingsPath}.tmp`, settingsPath);
     lastSavedText = contents;
-  } catch (error) { console.error('无法保存设置:', error.message); }
+    return '';
+  } catch (error) { console.error('无法保存设置:', error.message); return error.message; }
 }
 function save() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 500); }
 function load() {
-  settingsPath = path.join(app.getPath('userData'), 'settings.json');
+  settingsPath = path.join(dataDirectory, 'settings.json');
+  const previousSettingsPath = path.join(app.getPath('userData'), 'settings.json');
+  const sourcePath = storageMode === 'portable' && !fs.existsSync(settingsPath) && fs.existsSync(previousSettingsPath) ? previousSettingsPath : settingsPath;
   let saved;
-  try { saved = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch { saved = {}; }
+  try { saved = JSON.parse(fs.readFileSync(sourcePath, 'utf8')); } catch { saved = {}; }
   if (!saved || typeof saved !== 'object') saved = {};
   try {
     proxyUrl = Object.hasOwn(saved, 'proxyAddress') || Object.hasOwn(saved, 'proxyPort')
@@ -136,7 +161,7 @@ function downloadProgress(progress) {
 }
 async function downloadVoice(id) {
   const pet = pets.get(id);
-  if (!pet || !voices.find(pet.model.id)) return { ok: false, error: '仓库未收录该干员的语音。' };
+  if (!pet || !voices.find(pet.model.id)) return { ok: false, error: '当前干员无法读取 PRTS 语音。' };
   if (modelOperation) {
     pet.voiceError = '正在下载其他资源，完成后可点击“下载语音”重试。'; pet.changed();
     return { ok: false, error: pet.voiceError };
@@ -168,15 +193,22 @@ async function selectModel({ mode, modelId, id }) {
   changed();
   try {
     await library.ensure(model.id, progress => downloadProgress({ ...progress, phase: '模型' }), controller.signal);
-    await voices.ensure(model.id, downloadProgress, controller.signal);
+    let voiceWarning = '';
+    try { await voices.ensure(model.id, downloadProgress, controller.signal); }
+    catch (error) { controller.signal.throwIfAborted(); voiceWarning = `模型已下载，但 PRTS 语音下载失败：${error.message}`; }
     controller.signal.throwIfAborted();
     if (quitting) return { ok: false, error: '程序正在退出。' };
+    let pet;
     if (mode === 'replace') {
-      const pet = pets.get(id);
+      pet = pets.get(id);
       if (!pet) throw new Error('当前桌宠已退出，下载的模型已缓存。');
       pet.switchModel(model.id);
-    } else if (!addPet(model.id)) throw new Error('已达到桌宠数量上限。');
-    return { ok: true };
+    } else {
+      pet = addPet(model.id);
+      if (!pet) throw new Error('已达到桌宠数量上限。');
+    }
+    if (voiceWarning) { pet.voiceError = voiceWarning; pet.changed(); }
+    return { ok: true, warning: voiceWarning };
   } catch (error) {
     return { ok: false, error: controller.signal.aborted ? '已取消，当前干员保持不变。' : `更换失败：${error.message} 当前干员保持不变，可以重试。` };
   } finally { modelOperation = null; if (!quitting) { changed(); save(); } }
@@ -184,15 +216,22 @@ async function selectModel({ mode, modelId, id }) {
 function updateLimit(value) {
   if (!Number.isInteger(value) || value < 1 || value > 100) return { ok: false, error: '数量上限需要是 1～100 的整数。' };
   if (pets.size > value) return { ok: false, error: `当前有 ${pets.size} 个桌宠，请先退出多余的桌宠，再降低上限。` };
-  maxPets = value; save(); changed(); return { ok: true };
+  const previous = maxPets;
+  maxPets = value;
+  const saveError = saveNow();
+  if (saveError) { maxPets = previous; return { ok: false, error: `无法保存数量上限：${saveError}` }; }
+  changed(); return { ok: true };
 }
 function updateProxy(value) {
   try {
     if (!value || typeof value !== 'object') throw new Error('代理设置无效。');
+    const previous = proxyUrl;
     proxyUrl = normaliseProxyParts(value.address, value.port);
+    const saveError = saveNow();
+    if (saveError) { proxyUrl = previous; return { ok: false, error: `无法保存代理设置：${saveError}` }; }
     downloadRevision++;
-    voices?.clearTextRequests();
-    save(); changed();
+    voices?.clearRequests();
+    changed();
     return { ok: true, ...splitProxy(proxyUrl) };
   } catch (error) { return { ok: false, error: error.message }; }
 }
@@ -298,10 +337,6 @@ function registerIpc() {
     if (pet?.settings.voiceEnabled && pet.ready && voices.state(pet.model.id).cached && voices.state(pet.model.id).clips.some(clip => clip.id === clipId)) pet.send('pet:voice-play', clipId);
   });
   ipcMain.on('pet:voice-stop', (event, id) => target(event, id)?.stopVoice());
-  ipcMain.handle('pet:voice-text', (event, id) => {
-    const pet = target(event, id);
-    return pet ? voices.text(pet.model.id) : { error: '当前桌宠不可用。' };
-  });
   ipcMain.on('pet:voice-text-source', (event, id) => {
     const pet = target(event, id), url = pet && voices.textSource(pet.model.id);
     if (url) shell.openExternal(url).catch(() => {});
@@ -313,7 +348,11 @@ function registerIpc() {
   });
   ipcMain.on('pet:voice-error', (event, { modelId, message } = {}) => {
     const pet = senderPet(event);
-    if (trusted(event) && pet && pet.model.id === modelId) { pet.voiceError = String(message || '').slice(0, 300); pet.changed(); }
+    if (trusted(event) && pet && pet.model.id === modelId) {
+      pet.voiceError = String(message || '').slice(0, 300);
+      if (pet.voiceError) voices.invalidate(modelId);
+      pet.changed();
+    }
   });
   ipcMain.on('launcher:cancel-download', event => { if (trusted(event) && event.sender === launcher?.webContents) modelOperation?.controller.abort(); });
   ipcMain.on('launcher:select', (event, id) => { if (trusted(event) && event.sender === launcher?.webContents && pets.has(id)) { selectedId = id; changed(); save(); } });
@@ -336,7 +375,7 @@ function registerProtocol() {
     ['/vendor/pixi.js', path.join(ROOT, 'node_modules/pixi.js/dist/pixi.min.js')],
     ['/vendor/pixi-spine.js', path.join(ROOT, 'node_modules/pixi-spine/dist/pixi-spine.js')]
   ]);
-  const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json', '.atlas': 'text/plain; charset=utf-8', '.skel': 'application/octet-stream', '.ogg': 'audio/ogg' };
+  const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json', '.atlas': 'text/plain; charset=utf-8', '.skel': 'application/octet-stream', '.mp3': 'audio/mpeg' };
   protocol.handle('arkpet', async request => {
     try {
       const url = new URL(request.url);
@@ -380,9 +419,10 @@ else {
     if (!argv.includes('--standalone') || modelOperation) openLauncher();
   });
   app.whenReady().then(() => {
+    prepareDataDirectory();
     const saved = load(), previousSelection = selectedId;
     downloads = new DownloadClient(() => proxyUrl);
-    library = new ModelLibrary(app.getPath('userData'), downloads); voices = new VoiceLibrary(app.getPath('userData'), downloads); surfaces = new WindowSurfaces(screen);
+    library = new ModelLibrary(dataDirectory, downloads); voices = new VoiceLibrary(dataDirectory, downloads); surfaces = new WindowSurfaces(screen);
     const refreshDisplays = () => { const displays = screen.getAllDisplays(); environment = { displays, floors: floors(displays) }; };
     refreshDisplays();
     checkFullscreen();

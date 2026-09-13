@@ -1,19 +1,14 @@
-// Decode only the current operator on playback; source.start limits audio to one indexed clip.
 class ArkPetVoice {
   constructor(caption, error) {
     this.caption = caption; this.error = error; this.generation = 0; this.nextAutomatic = 0;
   }
   configure(state) {
     const previous = this.state;
-    if (previous && previous.downloadRevision !== state.downloadRevision) window.ArkPetVoiceTexts.clear();
     this.state = state;
     if (previous?.model.id !== state.model.id || previous?.voice?.id !== state.voice?.id || !this.allowed()) this.stop(true);
     if (this.gain && this.context) this.gain.gain.setValueAtTime(state.voiceVolume ?? 0.6, this.context.currentTime);
     if (state.voiceTextEnabled === false) this.caption(null);
-    else if (state.voiceEnabled && state.voice?.available) {
-      window.ArkPetVoiceTexts.get(state.voice);
-      if (previous?.voiceTextEnabled === false) this.refreshCaption?.();
-    }
+    else if (previous?.voiceTextEnabled === false) this.refreshCaption?.();
   }
   allowed() {
     const state = this.state;
@@ -32,7 +27,7 @@ class ArkPetVoice {
       this.source.disconnect(); this.source = null;
     }
     if (release) {
-      this.buffer = null; this.gain = null;
+      this.buffer = null; this.bufferKey = null; this.gain = null;
       const context = this.context; this.context = null;
       if (context && context.state !== 'closed') context.close().catch(() => {});
     } else if (this.context) {
@@ -49,21 +44,20 @@ class ArkPetVoice {
     const generation = this.generation, modelId = this.state.model.id;
     this.pending = true;
     const abort = new AbortController(); this.abort = abort;
-    const voice = this.state.voice;
+    const bufferKey = `${this.state.voice.id}:${clip.id}`;
     try {
       const context = this.context || new AudioContext({ latencyHint: 'playback' });
       this.context = context;
-      if (!this.buffer) {
-        const response = await fetch(this.state.voice.url, { signal: abort.signal });
+      if (!this.buffer || this.bufferKey !== bufferKey) {
+        const response = await fetch(clip.url, { signal: abort.signal });
         if (!response.ok) throw new Error('本地语音文件缺失，请重新下载当前干员的语音。');
         const buffer = await context.decodeAudioData(await response.arrayBuffer());
         if (generation !== this.generation) return;
-        this.buffer = buffer;
+        this.buffer = buffer; this.bufferKey = bufferKey;
       }
       await context.resume();
       if (generation !== this.generation || !this.allowed()) return;
-      const end = Math.min(clip.end, this.buffer.duration);
-      if (end <= clip.start) throw new Error('语音片段时间超出音频范围。');
+      if (!this.buffer.duration || this.buffer.duration > 180) throw new Error('语音片段时长无效。');
       if (!this.gain) { this.gain = context.createGain(); this.gain.connect(context.destination); }
       this.gain.gain.setValueAtTime(this.state.voiceVolume ?? 0.6, context.currentTime);
       const source = context.createBufferSource(); source.buffer = this.buffer; source.connect(this.gain);
@@ -77,23 +71,13 @@ class ArkPetVoice {
       };
       this.source = source; this.pending = false; this.abort = null;
       const startedAt = context.currentTime;
-      source.start(0, clip.start, end - clip.start);
+      source.start();
       this.nextAutomatic = Date.now() + 60000;
       this.error(modelId, '');
-      const showCaption = text => {
-        if (generation !== this.generation || this.source !== source || this.state.voiceTextEnabled === false) return;
-        const duration = end - clip.start - (context.currentTime - startedAt);
-        if (duration <= 0) return;
-        this.caption({ modelId, clipId: clip.id, playbackId: generation,
-          text: text?.clips[clip.id] || text?.error || (text ? '当前语音暂无对应的中文文本。' : '正在加载语音文本…'),
-          hasText: Boolean(text?.clips[clip.id]), duration });
-      };
       this.refreshCaption = () => {
-        if (this.state.voiceTextEnabled === false) return;
-        const cachedText = window.ArkPetVoiceTexts.peek(voice);
-        showCaption(cachedText);
-        // Text retrieval must not delay audio or overwrite the next clip's caption.
-        if (!cachedText) window.ArkPetVoiceTexts.get(voice).then(showCaption);
+        if (generation !== this.generation || this.source !== source || this.state.voiceTextEnabled === false) return;
+        const duration = this.buffer.duration - (context.currentTime - startedAt);
+        if (duration > 0) this.caption({ modelId, clipId: clip.id, playbackId: generation, duration });
       };
       this.refreshCaption();
     } catch (error) {

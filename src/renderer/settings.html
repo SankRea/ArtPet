@@ -6,7 +6,6 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'">
   <title>ArkPet 设置</title>
   <link rel="stylesheet" href="settings.css">
-  <script src="voice-text.js" defer></script>
   <script src="settings.js" defer></script>
 </head>
 <body>
@@ -78,7 +77,7 @@
               <div class="select-row"><label for="voice-clip">语音片段</label><select id="voice-clip"></select></div>
               <div class="utility-bar compact"><button id="play-voice" type="button">播放所选语音</button><button id="stop-voice" type="button">停止播放</button></div>
               <div class="voice-preview"><p id="voice-text" aria-live="polite">请选择语音片段。</p></div>
-              <div class="voice-source-row"><span class="inline-note">中文文本来源：PRTS Wiki</span><button id="voice-source" type="button">查看原文</button></div>
+              <div class="voice-source-row"><span class="inline-note">语音与中文文本来源：PRTS Wiki</span><button id="voice-source" type="button">查看原文</button></div>
               <div class="slider-row"><label for="voiceVolume">语音音量</label><output id="voiceVolume-value" for="voiceVolume">60%</output><input id="voiceVolume" type="range" min="0" max="100" step="5" value="60"></div>
             </details>
           </section>
@@ -98,7 +97,7 @@
         <select id="model-select" aria-label="选择干员或时装"></select>
         <p id="catalog-info" class="inline-note"></p>
         <div class="utility-bar"><button id="replace-pet" type="button">更换当前干员</button><button id="add-pet" class="primary" type="button">添加桌宠</button></div>
-        <p class="inline-note">更换或添加时下载所选模型及对应语音；已缓存的资源可离线使用。</p>
+        <p class="inline-note">模型来自 Ark-Models；对应语音与文字从 PRTS Wiki 的同一条记录下载。已缓存的资源可离线使用。</p>
       </section>
     </div>
 
@@ -120,6 +119,11 @@
         </section>
       </div>
 
+      <section class="card" aria-labelledby="storage-heading">
+        <div class="card-heading"><div><h2 id="storage-heading">本地数据</h2><p id="storage-description">正在读取保存位置…</p></div></div>
+        <code id="storage-path" class="storage-path"></code>
+      </section>
+
       <section class="card" aria-labelledby="help-heading">
         <div class="card-heading"><div><h2 id="help-heading">操作说明与快捷键</h2><p>常用操作可以在这里快速查看。</p></div></div>
         <div class="help-grid"><p>拖动桌宠可调整位置或抛掷；滚轮可调整大小。单击干员触发交互动作，并在启用语音后随机播放一条语音。</p><p>语音详细设置支持选择片段、预览台词和调节音量。中文台词按需从 PRTS Wiki 获取并缓存。</p><p>关闭设置窗口后桌宠继续运行。右键桌宠可使用精简后的常用菜单，双击托盘图标可重新打开设置。</p><p id="shortcuts"></p></div>
@@ -127,7 +131,7 @@
       <div class="utility-bar footer-actions"><button id="detach" type="button">关闭设置窗口</button><button id="quit-all" class="danger-subtle" type="button">退出应用</button></div>
     </div>
 
-    <footer>模型来自 Ark-Models · 设置自动保存</footer>
+    <footer>模型来自 Ark-Models · 桌宠设置自动保存 · 代理与数量设置需点击保存</footer>
   </main>
 </body>
 </html>

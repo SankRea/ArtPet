@@ -15,15 +15,27 @@ function stepPhysics(body, geometry, surfaces, dt, walkVelocity) {
       body.support = support;
     } else body.support = null;
   }
-  const previousFoot = body.y + geometry.footY;
+  const previousFootX = body.x + geometry.footX;
+  const previousFootY = body.y + geometry.footY;
   body.x += (body.vx + walkVelocity) * dt;
   footX = body.x + geometry.footX;
-  if (body.support && (footX < body.support.left || footX > body.support.right)) body.support = null;
+  let departedSupport = null;
+  if (body.support && (footX < body.support.left || footX > body.support.right)) {
+    departedSupport = body.support;
+    body.support = surfaces.find(surface => surface !== departedSupport && Math.abs(surface.y - departedSupport.y) <= 1 && footX >= surface.left && footX <= surface.right) || null;
+  }
   if (!body.support) {
     body.vy = Math.min(body.vy + 1700 * dt, 1800);
     body.y += body.vy * dt;
-    const nextFoot = body.y + geometry.footY;
-    const landing = body.vy >= 0 && surfaces.filter(surface => footX >= surface.left && footX <= surface.right && previousFoot <= surface.y + 1 && nextFoot >= surface.y).sort((a, b) => a.y - b.y)[0];
+    const nextFootY = body.y + geometry.footY;
+    const distance = nextFootY - previousFootY;
+    const landing = body.vy >= 0 && distance >= 0 ? surfaces.map(surface => {
+      if (departedSupport === surface && Math.abs(previousFootY - surface.y) <= 1) return null;
+      if (previousFootY > surface.y + 1 || nextFootY < surface.y) return null;
+      const time = distance > 0 ? clamp((surface.y - previousFootY) / distance, 0, 1) : 1;
+      const crossingX = previousFootX + (footX - previousFootX) * time;
+      return crossingX >= surface.left && crossingX <= surface.right ? { surface, time } : null;
+    }).filter(Boolean).sort((a, b) => a.time - b.time || a.surface.y - b.surface.y)[0]?.surface : null;
     if (landing) {
       body.y = landing.y - geometry.footY;
       body.vy = 0;

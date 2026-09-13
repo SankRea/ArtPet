@@ -7,16 +7,19 @@ window.ArkPetVoiceTexts = (() => {
     if (!record.html || record.voiceId !== voiceId) return result;
     const document = new DOMParser().parseFromString(record.html, 'text/html');
     const expected = normalisePath(`${record.directory}/${voiceId}`);
+    const candidates = [];
     for (const root of document.querySelectorAll('[data-voice-key]')) {
       const bases = (root.dataset.voiceBase || '').split(',').map(entry => {
         const separator = entry.indexOf(':');
         return { language: entry.slice(0, separator), path: entry.slice(separator + 1) };
       });
       const base = bases.find(entry => normalisePath(entry.path) === expected);
-      if (!base) continue;
-      // PRTS places outfit lines in language variants, e.g. 中文(残余).
-      const suffix = base.language.match(/[（(][^()（）]*[)）]$/)?.[0] || '';
-      if (!suffix && normalisePath(root.dataset.voiceKey) !== normalisePath(voiceId)) continue;
+      if (base) candidates.push({ root, suffix: base.language.match(/[（(][^()（）]*[)）]$/)?.[0] || '' });
+    }
+    if (!candidates.length) {
+      for (const root of document.querySelectorAll('[data-voice-key]')) candidates.push({ root, suffix: '' });
+    }
+    for (const { root, suffix } of candidates) {
       for (const item of root.querySelectorAll('.voice-data-item')) {
         const id = item.dataset.voiceFilename?.match(/^(?:CN_)?(\d{3})\.(?:wav|mp3|ogg)$/i)?.[1];
         const detail = [...item.querySelectorAll('.voice-item-detail')].find(node => node.dataset.kindName === `中文${suffix}`);
@@ -25,7 +28,7 @@ window.ArkPetVoiceTexts = (() => {
         copy.querySelectorAll('script, style, sup.reference').forEach(node => node.remove());
         copy.querySelectorAll('br').forEach(node => node.replaceWith('\n'));
         const text = copy.textContent.trim();
-        if (text && text.length <= 10000) result.clips[id] = text;
+        if (text && text.length <= 10000 && !result.clips[id]) result.clips[id] = text;
       }
     }
     if (!Object.keys(result.clips).length) result.error = 'PRTS 暂无与当前语音版本匹配的中文文本。';
@@ -42,5 +45,5 @@ window.ArkPetVoiceTexts = (() => {
     cache.set(voice.id, record);
     return record.promise;
   }
-  return { get, peek: voice => cache.get(voice?.id)?.result };
+  return { get, peek: voice => cache.get(voice?.id)?.result, clear: () => cache.clear() };
 })();

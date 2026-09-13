@@ -1,9 +1,9 @@
 const bridge = window.arkpet;
 const byId = id => document.getElementById(id);
-const booleanKeys = ['wander', 'autoActions', 'manualMode', 'gravity', 'windowEdges', 'alwaysOnTop', 'translucent', 'clickThrough', 'voiceEnabled', 'voiceTextEnabled'];
+const booleanKeys = ['wander', 'autoActions', 'manualMode', 'gravity', 'windowEdges', 'alwaysOnTop', 'translucent', 'clickThrough', 'voiceEnabled', 'idleVoiceEnabled', 'voiceTextEnabled'];
 let selectedId, petListSignature = '', formSignature = '', voiceSignature = '', currentData, uiBusy = false, searchTimer;
 let catalogIndex = [], modelsById = new Map();
-let voicePreviewKey = '';
+let voicePreviewKey = '', voiceTextRevision = 0;
 
 function options(select, records) {
   select.replaceChildren(...records.map(({ value, label }) => {
@@ -30,6 +30,8 @@ function updateButtons() {
   byId('add-pet').textContent = model && !model.cached ? '下载并添加' : '添加桌宠';
   byId('save-limit').disabled = busy;
   byId('max-pets').disabled = busy;
+  byId('save-proxy').disabled = busy;
+  byId('proxy-url').disabled = busy;
   byId('download-voice').disabled = busy || !pet?.voice?.available;
   byId('play-voice').disabled = busy || !pet?.voiceEnabled || !pet?.voice?.cached || !pet?.ready || !pet?.visible || pet?.paused || pet?.fullscreenSuspended || !byId('voice-clip').value;
   byId('voice-clip').disabled = !pet?.voice?.cached;
@@ -43,7 +45,7 @@ function updateVoicePreview() {
     byId('voice-text').textContent = pet?.voice?.available ? '请选择语音片段。' : '当前干员暂无可用语音。';
     return;
   }
-  const key = `${pet.id}:${pet.voice.id}:${clipId}`;
+  const key = `${voiceTextRevision}:${pet.id}:${pet.voice.id}:${clipId}`;
   if (key === voicePreviewKey) return;
   voicePreviewKey = key;
   byId('voice-text').textContent = '正在加载语音文本…';
@@ -65,7 +67,7 @@ function renderOperation(operation) {
   if (operation) {
     const progress = operation.progress;
     byId('download-progress').value = progress ? Math.min(1, (progress.index + (progress.expected ? progress.received / progress.expected : 0)) / progress.total) : 0;
-    byId('download-text').textContent = progress ? `${operation.name} · ${progress.phase || '资源'} · ${Math.min(progress.total, progress.index + 1)}/${progress.total} · ${progress.file}` : `正在准备 ${operation.name}…`;
+    byId('download-text').textContent = progress ? `${operation.name} · ${progress.phase || '资源'}${progress.proxied ? ' · 代理重试' : ''} · ${Math.min(progress.total, progress.index + 1)}/${progress.total} · ${progress.file}` : `正在准备 ${operation.name}…`;
   }
 }
 function render(data) {
@@ -85,6 +87,7 @@ function render(data) {
   selectedId = state?.id;
   if (catalogChanged) updateChoices();
   if (document.activeElement !== byId('max-pets')) byId('max-pets').value = data.maxPets;
+  if (document.activeElement !== byId('proxy-url')) byId('proxy-url').value = data.proxyUrl || '';
   byId('pet-count').textContent = `${data.pets.length} / ${data.maxPets}`;
   renderOperation(data.operation);
   updateButtons();
@@ -163,6 +166,14 @@ byId('model-select').addEventListener('change', updateButtons);
 byId('add-pet').addEventListener('click', () => request(() => bridge.addPet(byId('model-select').value), '已添加桌宠。'));
 byId('replace-pet').addEventListener('click', () => request(() => bridge.replacePet(byId('model-select').value, selectedId), '已切换干员。'));
 byId('save-limit').addEventListener('click', () => request(() => bridge.setMaxPets(Number(byId('max-pets').value)), '桌宠数量上限已保存。'));
+byId('save-proxy').addEventListener('click', () => request(async () => {
+  const result = await bridge.setProxy(byId('proxy-url').value);
+  if (result.ok) {
+    byId('proxy-url').value = result.proxyUrl;
+    window.ArkPetVoiceTexts.clear(); voiceTextRevision++; voicePreviewKey = ''; updateVoicePreview();
+  }
+  return result;
+}, '下载代理设置已保存。'));
 byId('cancel-download').addEventListener('click', () => { bridge.cancelDownload(); byId('operation-message').textContent = '正在取消下载…'; });
 byId('detach').addEventListener('click', () => bridge.detach());
 byId('quit-all').addEventListener('click', () => bridge.command('quit-all'));

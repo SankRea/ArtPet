@@ -1,4 +1,3 @@
-const { net } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
@@ -11,9 +10,10 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const BUNDLED_VOICE = 'char_350_surtr';
 
 class VoiceLibrary {
-  constructor(userData) {
+  constructor(userData, downloads) {
     this.root = path.join(userData, 'voices');
-    this.texts = new VoiceTextLibrary(userData);
+    this.downloads = downloads;
+    this.texts = new VoiceTextLibrary(userData, downloads);
     this.entries = new Map(); this.cached = new Map(); this.states = new Map();
     let directories;
     try { directories = new Set(fs.readdirSync(this.root)); } catch { directories = new Set(); }
@@ -46,9 +46,10 @@ class VoiceLibrary {
   async text(modelId) {
     const voice = this.find(modelId), model = findModel(modelId);
     if (!voice || !model) return { error: '当前干员暂无语音资源。' };
-    return { ...await this.texts.get(model.name), voiceId: voice.id, directory: voice.directory };
+    return { ...await this.texts.get(model.name), operatorName: model.name, voiceId: voice.id, directory: voice.directory };
   }
   textSource(modelId) { const model = findModel(modelId); return model ? sourceUrl(model.name) : null; }
+  clearTextRequests() { this.texts.clear(); }
   state(modelId) {
     const voice = this.find(modelId);
     if (!voice) return { available: false, cached: false, clips: [] };
@@ -84,20 +85,23 @@ class VoiceLibrary {
     };
     try {
       const url = `https://raw.githubusercontent.com/isHarryh/Ark-Voice/${catalog.commit}/${voice.directory}/${encodeURIComponent(voice.file)}`;
-      const response = await net.fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(90000)].filter(Boolean)), credentials: 'omit' });
-      if (!response.ok || !response.body) throw new Error(`语音下载失败（HTTP ${response.status}）。`);
-      let received = 0, prefix = Buffer.alloc(0);
-      const digest = createHash('sha256');
-      const inspect = new Transform({ transform(chunk, _encoding, callback) {
-        received += chunk.length;
-        if (received > voice.size) { callback(new Error('语音文件大小与目录不符。')); return; }
-        if (prefix.length < 4) prefix = Buffer.concat([prefix, chunk.subarray(0, 4 - prefix.length)]);
-        digest.update(chunk); progress({ phase: '语音', file: voice.file, index: 0, total: 1, received, expected: voice.size });
-        callback(null, chunk);
-      } });
-      await pipeline(Readable.fromWeb(response.body), inspect, fs.createWriteStream(path.join(temporary, voice.file), { flags: 'wx' }), { signal });
-      if (received !== voice.size || prefix.toString('ascii') !== 'OggS') throw new Error('语音文件不完整或格式无效。');
-      const record = { voiceId: voice.id, language: voice.language, commit: catalog.commit, repository: catalog.repository, file: voice.file, bytes: received, sha256: digest.digest('hex') };
+      const destinationFile = path.join(temporary, voice.file);
+      const record = await this.downloads.fetch(url, { signal, onProxy: () => progress({ phase: '语音', file: voice.file, index: 0, total: 1, received: 0, expected: voice.size, proxied: true }) }, async (response, attemptSignal, touch, proxied) => {
+        if (!response.ok || !response.body) throw new Error(`语音下载失败（HTTP ${response.status}）。`);
+        await fs.promises.rm(destinationFile, { force: true });
+        let received = 0, prefix = Buffer.alloc(0);
+        const digest = createHash('sha256');
+        const inspect = new Transform({ transform(chunk, _encoding, callback) {
+          touch(); received += chunk.length;
+          if (received > voice.size) { callback(new Error('语音文件大小与目录不符。')); return; }
+          if (prefix.length < 4) prefix = Buffer.concat([prefix, chunk.subarray(0, 4 - prefix.length)]);
+          digest.update(chunk); progress({ phase: '语音', file: voice.file, index: 0, total: 1, received, expected: voice.size, proxied });
+          callback(null, chunk);
+        } });
+        await pipeline(Readable.fromWeb(response.body), inspect, fs.createWriteStream(destinationFile, { flags: 'wx' }), { signal: attemptSignal });
+        if (received !== voice.size || prefix.toString('ascii') !== 'OggS') throw new Error('语音文件不完整或格式无效。');
+        return { voiceId: voice.id, language: voice.language, commit: catalog.commit, repository: catalog.repository, file: voice.file, bytes: received, sha256: digest.digest('hex') };
+      });
       await fs.promises.writeFile(path.join(temporary, 'source.json'), JSON.stringify(record, null, 2));
       signal?.throwIfAborted();
       const destination = this.directory(voice);

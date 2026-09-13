@@ -1,4 +1,3 @@
-const { net } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
@@ -13,8 +12,9 @@ async function hashFile(filename, signal) {
 }
 
 class ModelLibrary {
-  constructor(userData) {
+  constructor(userData, downloads) {
     this.root = path.join(userData, 'models');
+    this.downloads = downloads;
     this.cached = new Map();
     this.revision = 0; this.catalog = null;
     let directories;
@@ -75,33 +75,37 @@ class ModelLibrary {
         const file = files[index];
         if (!safeFile(file)) throw new Error('模型文件名无效。');
         const url = `https://raw.githubusercontent.com/isHarryh/Ark-Models/${CATALOG_COMMIT}/models/${encodeURIComponent(model.sourceFolder)}/${encodeURIComponent(file)}`;
-        const response = await net.fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(90000)].filter(Boolean)), credentials: 'omit' });
-        if (!response.ok || !response.body) throw new Error(`下载 ${file} 失败（HTTP ${response.status}）。`);
-        const expected = Number(response.headers.get('content-length')) || 0;
-        const destinationFile = path.join(temporary, file), digest = createHash('sha256');
-        let received = 0, prefix = Buffer.alloc(0);
-        const inspect = new Transform({
-          transform(chunk, _encoding, callback) {
-            received += chunk.length; bytesTotal += chunk.length;
-            if (received > 32 * 1024 * 1024 || bytesTotal > 100 * 1024 * 1024) {
-              callback(new Error('模型文件大小超出限制。')); return;
+        const destinationFile = path.join(temporary, file);
+        const record = await this.downloads.fetch(url, { signal, onProxy: () => progress({ file, index, total: files.length, received: 0, expected: 0, proxied: true }) }, async (response, attemptSignal, touch, proxied) => {
+          if (!response.ok || !response.body) throw new Error(`下载 ${file} 失败（HTTP ${response.status}）。`);
+          await fs.promises.rm(destinationFile, { force: true });
+          const expected = Number(response.headers.get('content-length')) || 0, digest = createHash('sha256');
+          let received = 0, prefix = Buffer.alloc(0);
+          const inspect = new Transform({
+            transform(chunk, _encoding, callback) {
+              touch(); received += chunk.length;
+              if (received > 32 * 1024 * 1024 || bytesTotal + received > 100 * 1024 * 1024) {
+                callback(new Error('模型文件大小超出限制。')); return;
+              }
+              if (prefix.length < 8) prefix = Buffer.concat([prefix, chunk.subarray(0, 8 - prefix.length)]);
+              digest.update(chunk);
+              progress({ file, index, total: files.length, received, expected, proxied });
+              callback(null, chunk);
             }
-            if (prefix.length < 8) prefix = Buffer.concat([prefix, chunk.subarray(0, 8 - prefix.length)]);
-            digest.update(chunk);
-            progress({ file, index, total: files.length, received, expected });
-            callback(null, chunk);
-          }
+          });
+          await pipeline(Readable.fromWeb(response.body), inspect, fs.createWriteStream(destinationFile, { flags: 'wx' }), { signal: attemptSignal });
+          if (!received) throw new Error(`${file} 是空文件。`);
+          if (/\.png$/i.test(file) && !prefix.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error(`${file} 不是有效的 PNG 文件。`);
+          return { file, bytes: received, sha256: digest.digest('hex') };
         });
-        await pipeline(Readable.fromWeb(response.body), inspect, fs.createWriteStream(destinationFile, { flags: 'wx' }), { signal });
-        if (!received) throw new Error(`${file} 是空文件。`);
-        if (/\.png$/i.test(file) && !prefix.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error(`${file} 不是有效的 PNG 文件。`);
+        bytesTotal += record.bytes;
         if (file === model.atlas) {
           const lines = (await fs.promises.readFile(destinationFile, 'utf8')).split(/\r?\n/).map(line => line.trim());
           const pages = lines.filter((line, lineIndex) => /\.png$/i.test(line) && (lineIndex === 0 || !lines[lineIndex - 1]));
           if (!pages.length || pages.some(page => !safeFile(page))) throw new Error('模型图集没有有效的纹理页。');
           for (const page of pages) if (!files.includes(page)) files.push(page);
         }
-        records.push({ file, bytes: received, sha256: digest.digest('hex') });
+        records.push(record);
         progress({ file, index: index + 1, total: files.length, received: 0, expected: 0 });
       }
       signal?.throwIfAborted();

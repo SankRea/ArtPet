@@ -6,6 +6,7 @@ const { PetWindow } = require('./pet-window.cjs');
 const { DEFAULT_MODEL_ID, CATALOG_COMMIT, findModel } = require('./models.cjs');
 const { ModelLibrary } = require('./model-library.cjs');
 const { VoiceLibrary } = require('./voice-library.cjs');
+const { DownloadClient, normaliseProxy } = require('./download-client.cjs');
 const defaultConfig = require('../config.json');
 const { WindowSurfaces } = require('./window-surfaces.cjs');
 const { floors } = require('./physics.cjs');
@@ -14,19 +15,19 @@ const ROOT = path.join(__dirname, '..');
 const pets = new Map(), petTrays = new Map();
 let launcher, launcherTray, selectedId, settingsPath, saveTimer, loopTimer, changeTimer, trayIcon, fullscreenTimer;
 let surfaces, quitting = false, lastTick = Date.now(), shortcutStatus = {};
-let library, voices, modelOperation = null, maxPets = 1;
+let library, voices, downloads, modelOperation = null, maxPets = 1, proxyUrl = '', downloadRevision = 0;
 let environment, loopRunning = false, nextSurfaceScan = 0, launcherCatalogRevision = -1, lastSavedText;
 let fullscreenActive = false;
 const exists = win => win && !win.isDestroyed();
 protocol.registerSchemesAsPrivileged([{ scheme: 'arkpet', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.setName('ArkPet Surtr');
 
-function globalState() { return { shortcutStatus, windowDetection: { available: surfaces?.available || false, error: surfaces?.error || '' }, fullscreen: { active: fullscreenActive, available: surfaces?.available || false, error: surfaces?.fullscreenError || '' } }; }
+function globalState() { return { shortcutStatus, downloadRevision, windowDetection: { available: surfaces?.available || false, error: surfaces?.error || '' }, fullscreen: { active: fullscreenActive, available: surfaces?.available || false, error: surfaces?.fullscreenError || '' } }; }
 function operationState() {
   return modelOperation ? { mode: modelOperation.mode, modelId: modelOperation.modelId, name: modelOperation.name, progress: modelOperation.progress } : null;
 }
 function launcherState(includeCatalog = true) {
-  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state()), maxPets, operation: operationState(), catalogCommit: CATALOG_COMMIT, ...globalState() };
+  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state()), maxPets, proxyUrl, operation: operationState(), catalogCommit: CATALOG_COMMIT, ...globalState() };
   if (includeCatalog) { state.models = library.list(); launcherCatalogRevision = library.revision; }
   return state;
 }
@@ -48,7 +49,7 @@ function tickLoop() {
   if (quitting || fullscreenActive || !active.length) return;
   loopRunning = true;
   try {
-    const now = Date.now(), dt = Math.min((now - lastTick) / 1000, 0.05); lastTick = now;
+    const now = Date.now(), dt = Math.min(Math.max((now - lastTick) / 1000, 0), 0.05); lastTick = now;
     const detectors = active.filter(pet => pet.ready && !pet.paused && pet.settings.gravity && pet.settings.windowEdges);
     if (detectors.length && now >= nextSurfaceScan) {
       const previousError = surfaces.error;
@@ -79,7 +80,7 @@ function saveNow() {
   clearTimeout(saveTimer);
   if (!settingsPath) return;
   try {
-    const contents = JSON.stringify({ version: 4, maxPets, selectedId, pets: [...pets.values()].map(pet => pet.serialise()) }, null, 2);
+    const contents = JSON.stringify({ version: 4, maxPets, proxyUrl, selectedId, pets: [...pets.values()].map(pet => pet.serialise()) }, null, 2);
     if (contents === lastSavedText) return;
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(`${settingsPath}.tmp`, contents);
@@ -93,6 +94,7 @@ function load() {
   let saved;
   try { saved = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch { saved = {}; }
   if (!saved || typeof saved !== 'object') saved = {};
+  try { proxyUrl = normaliseProxy(saved.proxyUrl); } catch { proxyUrl = ''; }
   const limit = [3, 4].includes(saved.version) && Number.isInteger(saved.maxPets) ? saved.maxPets : defaultConfig.maxPets;
   maxPets = Number.isInteger(limit) && limit >= 1 && limit <= 100 ? limit : 1;
   if ([2, 3, 4].includes(saved.version) && Array.isArray(saved.pets)) {
@@ -180,6 +182,15 @@ function updateLimit(value) {
   if (!Number.isInteger(value) || value < 1 || value > 100) return { ok: false, error: '数量上限需要是 1～100 的整数。' };
   if (pets.size > value) return { ok: false, error: `当前有 ${pets.size} 个桌宠，请先退出多余的桌宠，再降低上限。` };
   maxPets = value; save(); changed(); return { ok: true };
+}
+function updateProxy(value) {
+  try {
+    proxyUrl = normaliseProxy(value);
+    downloadRevision++;
+    voices?.clearTextRequests();
+    save(); changed();
+    return { ok: true, proxyUrl };
+  } catch (error) { return { ok: false, error: error.message }; }
 }
 function closed(pet) {
   if (quitting) return;
@@ -276,6 +287,7 @@ function registerIpc() {
   });
   ipcMain.handle('launcher:model', (event, request) => trusted(event) && event.sender === launcher?.webContents && request ? selectModel(request) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:limit', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateLimit(value) : { ok: false, error: '请求无效。' });
+  ipcMain.handle('launcher:proxy', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateProxy(value) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:voice-download', (event, id) => trusted(event) && event.sender === launcher?.webContents ? downloadVoice(id) : { ok: false, error: '请求无效。' });
   ipcMain.on('pet:voice-play', (event, { clipId, id } = {}) => {
     const pet = target(event, id);
@@ -365,7 +377,8 @@ else {
   });
   app.whenReady().then(() => {
     const saved = load(), previousSelection = selectedId;
-    library = new ModelLibrary(app.getPath('userData')); voices = new VoiceLibrary(app.getPath('userData')); surfaces = new WindowSurfaces(screen);
+    downloads = new DownloadClient(() => proxyUrl);
+    library = new ModelLibrary(app.getPath('userData'), downloads); voices = new VoiceLibrary(app.getPath('userData'), downloads); surfaces = new WindowSurfaces(screen);
     const refreshDisplays = () => { const displays = screen.getAllDisplays(); environment = { displays, floors: floors(displays) }; };
     refreshDisplays();
     checkFullscreen();

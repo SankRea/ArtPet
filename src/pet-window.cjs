@@ -4,7 +4,7 @@ const { findModel } = require('./models.cjs');
 const { clamp, stepPhysics } = require('./physics.cjs');
 const { VoiceCaption } = require('./voice-caption.cjs');
 
-const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 30, voiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
+const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 30, voiceEnabled: false, idleVoiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
 const LABELS = { default: '恢复待机', interact: '交互动作', relax: '休息', sit: '坐下', sleep: '睡眠', special: '特殊动作' };
 const exists = win => win && !win.isDestroyed();
 const number = (value, fallback, min, max) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback;
@@ -294,6 +294,7 @@ class PetWindow {
       toggle('重力与抛掷', 'gravity'), { ...toggle('窗口边缘停靠', 'windowEdges'), enabled: this.settings.gravity && this.host.globalState().windowDetection.available },
       toggle('始终置顶', 'alwaysOnTop'), toggle('半透明', 'translucent'), toggle('鼠标穿透', 'clickThrough'),
       { ...toggle('启用语音', 'voiceEnabled'), enabled: this.settings.voiceEnabled || this.host.voices.state(this.model.id).available },
+      toggle('闲置时播放语音', 'idleVoiceEnabled'),
       toggle('显示语音文本', 'voiceTextEnabled'),
       { label: '停止语音', enabled: this.settings.voiceEnabled, click: () => this.stopVoice() },
       { label: this.paused ? '恢复活动' : '暂停活动', click: () => this.togglePause() },
@@ -374,7 +375,7 @@ class PetWindow {
     }
     if (idle.length) {
       const next = idle[Math.floor(Math.random() * idle.length)];
-      this.act(next.action, false, true, next.name);
+      this.act(next.action, false, this.settings.idleVoiceEnabled, next.name);
     } else if (this.pose !== 'default') this.act('default', false);
   }
 }

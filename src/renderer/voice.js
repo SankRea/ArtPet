@@ -5,6 +5,7 @@ class ArkPetVoice {
   }
   configure(state) {
     const previous = this.state;
+    if (previous && previous.downloadRevision !== state.downloadRevision) window.ArkPetVoiceTexts.clear();
     this.state = state;
     if (previous?.model.id !== state.model.id || previous?.voice?.id !== state.voice?.id || !this.allowed()) this.stop(true);
     if (this.gain && this.context) this.gain.gain.setValueAtTime(state.voiceVolume ?? 0.6, this.context.currentTime);

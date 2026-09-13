@@ -1,4 +1,3 @@
-const { net } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
@@ -8,10 +7,12 @@ const CACHE_AGE = 30 * 24 * 60 * 60 * 1000;
 const sourceUrl = name => `https://prts.wiki/w/${encodeURIComponent(name)}/${encodeURIComponent('语音记录')}`;
 
 class VoiceTextLibrary {
-  constructor(userData) {
+  constructor(userData, downloads) {
     this.root = path.join(userData, 'voice-texts');
+    this.downloads = downloads;
     this.requests = new Map();
   }
+  clear() { this.requests.clear(); }
   async get(name) {
     const previous = this.requests.get(name);
     if (previous && previous.expires > Date.now()) return previous.promise;
@@ -36,20 +37,21 @@ class VoiceTextLibrary {
       }
     } catch { /* Missing cache is fetched only for the selected operator. */ }
     try {
-      const response = await net.fetch(source, { credentials: 'omit', signal: AbortSignal.timeout(15000) });
-      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-      const reader = response.body.getReader(), chunks = [];
-      let bytes = 0;
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          bytes += value.length;
-          if (bytes > MAX_BYTES) throw new Error('页面超过大小限制');
-          chunks.push(Buffer.from(value));
-        }
-      } finally { await reader.cancel().catch(() => {}); }
-      const html = Buffer.concat(chunks).toString('utf8');
+      const html = await this.downloads.fetch(source, { directTimeout: 10000, proxyTimeout: 30000 }, async (response, _signal, touch) => {
+        if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+        const reader = response.body.getReader(), chunks = [];
+        let bytes = 0;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            touch(); bytes += value.length;
+            if (bytes > MAX_BYTES) throw new Error('页面超过大小限制');
+            chunks.push(Buffer.from(value));
+          }
+        } finally { await reader.cancel().catch(() => {}); }
+        return Buffer.concat(chunks).toString('utf8');
+      });
       if (!html.includes('data-voice-key=')) throw new Error('页面未包含语音记录');
       try {
         await fs.promises.mkdir(this.root, { recursive: true });

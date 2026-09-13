@@ -23,6 +23,11 @@
       <p id="catalog-info" class="inline-note"></p>
       <div class="utility-bar"><button id="replace-pet" type="button">更换当前干员</button><button id="add-pet" type="button">添加桌宠</button></div>
       <p class="inline-note">更换或添加时下载所选模型及对应语音；已缓存的资源可离线使用。</p>
+      <div class="network-settings">
+        <label for="proxy-url">下载代理地址</label>
+        <div class="proxy-row"><input id="proxy-url" type="text" inputmode="url" spellcheck="false" placeholder="例如：http://127.0.0.1:7890"><button id="save-proxy" type="button">保存</button></div>
+        <p class="inline-note">支持 HTTP、HTTPS、SOCKS4 和 SOCKS5；省略协议时按 HTTP 处理。下载始终先尝试直连，仅在超时且已填写代理地址时通过代理重试。</p>
+      </div>
       <div class="limit-row"><label for="max-pets">桌宠数量上限</label><input id="max-pets" type="number" min="1" max="100" step="1" value="1"><button id="save-limit" type="button">保存</button><span id="pet-count"></span></div>
       <div id="download-panel" hidden><progress id="download-progress" max="1" value="0"></progress><p id="download-text" class="inline-note"></p><button id="cancel-download" type="button">取消下载</button></div>
       <p id="operation-message" class="inline-note" role="status"></p>
@@ -82,8 +87,9 @@
       </div>
       <div class="setting-row"><label for="frameRate">动画帧率</label><select id="frameRate"><option value="15">15 FPS</option><option value="24">24 FPS</option><option value="30" selected>30 FPS · 默认</option><option value="45">45 FPS</option><option value="60">60 FPS</option></select></div>
       <div class="setting-row"><label for="voiceEnabled">启用语音</label><input id="voiceEnabled" type="checkbox"></div>
+      <div class="setting-row"><label for="idleVoiceEnabled" title="允许干员在自主切换待机、休息或特殊动作时播放对应语音">闲置时自动播放语音</label><input id="idleVoiceEnabled" type="checkbox"></div>
       <div class="setting-row"><label for="voiceTextEnabled" title="控制桌面语音文字框的显示，不影响语音播放或设置中的台词预览">显示语音文本</label><input id="voiceTextEnabled" type="checkbox" checked></div>
-      <p class="inline-note">启用语音后，单击干员随机播放一条语音。可独立关闭语音文字框。</p>
+      <p class="inline-note">启用语音后，单击干员随机播放一条语音。闲置语音与语音文字框可分别关闭。</p>
       <details id="voice-controls" hidden open>
         <summary>语音详细设置</summary>
         <p id="voice-status" class="inline-note" role="status"></p>

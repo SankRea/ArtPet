@@ -46,7 +46,7 @@
             <div class="card-heading"><div><h2 id="behavior-heading">行为与物理</h2><p>控制自主行为、移动和桌面碰撞。</p></div></div>
             <div class="setting-row"><label for="manualMode" title="停止自动移动和自主动作，保留手动操作及重力效果">手动模式</label><input id="manualMode" type="checkbox"></div>
             <div class="setting-row"><label for="wander">自动移动</label><input id="wander" type="checkbox"></div>
-            <div class="setting-row"><label for="autoActions" title="空闲时随机切换模型支持的待机、休息和特殊动作，避免连续重复">自主动作</label><input id="autoActions" type="checkbox"></div>
+            <div class="setting-row"><label for="autoActions" title="空闲时随机切换待机、休息和特殊动作；连续 10 分钟未操作且模型支持时进入睡眠">自主动作</label><input id="autoActions" type="checkbox"></div>
             <div class="setting-row"><label for="gravity">重力与抛掷</label><input id="gravity" type="checkbox"></div>
             <div class="setting-row"><label for="windowEdges" title="允许桌宠停靠在可见窗口的上边缘，需要启用重力">窗口边缘停靠</label><input id="windowEdges" type="checkbox"></div>
             <p id="window-status" class="inline-note"></p>
@@ -103,6 +103,12 @@
 
     <div id="app-settings-panel" class="page-panel" role="tabpanel" data-settings-panel="app" hidden>
       <div class="settings-grid">
+        <section class="card preferences" aria-labelledby="startup-heading">
+          <div class="card-heading"><div><h2 id="startup-heading">启动选项</h2><p>设置登录 Windows 后是否自动运行桌宠。</p></div></div>
+          <div class="setting-row"><label for="autoStart">开机自动启动</label><input id="autoStart" type="checkbox"></div>
+          <p id="auto-start-status" class="inline-note">默认关闭。开启后将直接显示桌宠，不打开设置窗口。</p>
+        </section>
+
         <section class="card" aria-labelledby="capacity-heading">
           <div class="card-heading"><div><h2 id="capacity-heading">桌宠数量</h2><p>设置同时运行的桌宠上限。</p></div></div>
           <div class="limit-row"><label for="max-pets">数量上限</label><input id="max-pets" type="number" min="1" max="100" step="1" value="1"><button id="save-limit" type="button">保存</button><span id="pet-count"></span></div>

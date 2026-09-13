@@ -12,6 +12,7 @@ const { WindowSurfaces } = require('./window-surfaces.cjs');
 const { floors } = require('./physics.cjs');
 
 const ROOT = path.join(__dirname, '..');
+const AUTO_START_NAME = 'ArkPet Surtr';
 const pets = new Map(), petTrays = new Map();
 let launcher, launcherTray, selectedId, settingsPath, saveTimer, loopTimer, changeTimer, trayIcon, fullscreenTimer;
 let surfaces, quitting = false, lastTick = Date.now(), shortcutStatus = {};
@@ -49,7 +50,7 @@ function operationState() {
   return modelOperation ? { mode: modelOperation.mode, modelId: modelOperation.modelId, name: modelOperation.name, progress: modelOperation.progress } : null;
 }
 function launcherState(includeCatalog = true) {
-  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state()), maxPets, ...splitProxy(proxyUrl), storage: { directory: dataDirectory, mode: storageMode }, operation: operationState(), catalogCommit: CATALOG_COMMIT, ...globalState() };
+  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state()), maxPets, ...splitProxy(proxyUrl), autoStart: autoStartState(), storage: { directory: dataDirectory, mode: storageMode }, operation: operationState(), catalogCommit: CATALOG_COMMIT, ...globalState() };
   if (includeCatalog) { state.models = library.list(); launcherCatalogRevision = library.revision; }
   return state;
 }
@@ -112,6 +113,39 @@ function saveNow() {
   } catch (error) { console.error('无法保存设置:', error.message); return error.message; }
 }
 function save() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 500); }
+function autoStartOptions() {
+  const portableExecutable = process.env.PORTABLE_EXECUTABLE_FILE;
+  if (process.platform === 'win32' && portableExecutable && path.isAbsolute(portableExecutable)) {
+    return { path: portableExecutable, args: ['--standalone'] };
+  }
+  return { path: process.execPath, args: app.isPackaged ? ['--standalone'] : [ROOT, '--standalone'] };
+}
+function autoStartState() {
+  if (process.platform !== 'win32') return { available: false, enabled: false, registered: false, error: '当前系统不支持开机自动启动设置。' };
+  try {
+    const options = autoStartOptions();
+    const settings = app.getLoginItemSettings(options);
+    const executable = path.resolve(options.path).toLowerCase();
+    const launchItem = settings.launchItems?.find(item => item.name === AUTO_START_NAME && path.resolve(item.path).toLowerCase() === executable);
+    const registered = Boolean(launchItem || settings.openAtLogin);
+    const enabled = registered && (launchItem ? launchItem.enabled !== false : settings.executableWillLaunchAtLogin !== false);
+    return { available: true, enabled, registered, error: '' };
+  } catch (error) {
+    return { available: false, enabled: false, registered: false, error: `无法读取系统启动项：${error.message}` };
+  }
+}
+function updateAutoStart(value) {
+  if (typeof value !== 'boolean') return { ok: false, error: '开机自动启动设置无效。' };
+  const current = autoStartState();
+  if (!current.available) return { ok: false, error: current.error };
+  try {
+    app.setLoginItemSettings({ openAtLogin: value, enabled: value, name: AUTO_START_NAME, ...autoStartOptions() });
+    const state = autoStartState();
+    if (state.enabled !== value) throw new Error(value ? '系统未能启用该启动项。' : '系统未能移除该启动项。');
+    changed();
+    return { ok: true, ...state };
+  } catch (error) { return { ok: false, error: `无法修改开机自动启动设置：${error.message}` }; }
+}
 function load() {
   settingsPath = path.join(dataDirectory, 'settings.json');
   const previousSettingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -331,6 +365,7 @@ function registerIpc() {
   ipcMain.handle('launcher:model', (event, request) => trusted(event) && event.sender === launcher?.webContents && request ? selectModel(request) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:limit', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateLimit(value) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:proxy', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateProxy(value) : { ok: false, error: '请求无效。' });
+  ipcMain.handle('launcher:auto-start', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateAutoStart(value) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:voice-download', (event, id) => trusted(event) && event.sender === launcher?.webContents ? downloadVoice(id) : { ok: false, error: '请求无效。' });
   ipcMain.on('pet:voice-play', (event, { clipId, id } = {}) => {
     const pet = target(event, id);

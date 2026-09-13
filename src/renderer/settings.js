@@ -45,6 +45,7 @@ function updateButtons() {
   byId('save-proxy').disabled = busy;
   byId('proxy-address').disabled = busy;
   byId('proxy-port').disabled = busy;
+  byId('autoStart').disabled = busy || !currentData.autoStart?.available;
   byId('download-voice').disabled = busy || !pet?.voice?.available;
   byId('play-voice').disabled = busy || !pet?.voiceEnabled || !pet?.voice?.cached || !pet?.ready || !pet?.visible || pet?.paused || pet?.fullscreenSuspended || !byId('voice-clip').value;
   byId('voice-clip').disabled = !pet?.voice?.cached;
@@ -100,6 +101,11 @@ function render(data) {
   if (document.activeElement !== byId('max-pets')) byId('max-pets').value = data.maxPets;
   if (document.activeElement !== byId('proxy-address')) byId('proxy-address').value = data.proxyAddress || '';
   if (document.activeElement !== byId('proxy-port')) byId('proxy-port').value = data.proxyPort || '';
+  const autoStart = data.autoStart || { available: false, enabled: false, registered: false, error: '无法读取开机自动启动状态。' };
+  byId('autoStart').checked = autoStart.enabled;
+  byId('auto-start-status').textContent = autoStart.error || (autoStart.enabled
+    ? '已启用。登录 Windows 后将直接显示桌宠，不打开设置窗口。'
+    : autoStart.registered ? '该启动项已被 Windows 停用，可在这里重新开启。' : '默认关闭。开启后将直接显示桌宠，不打开设置窗口。');
   const storageMessages = {
     portable: '便携版的设置与下载数据保存在程序旁，可随程序文件夹一起移动。',
     fallback: '程序所在目录不可写，设置与下载数据已改存到当前用户目录。',
@@ -185,6 +191,20 @@ byId('model-select').addEventListener('change', updateButtons);
 byId('add-pet').addEventListener('click', () => request(() => bridge.addPet(byId('model-select').value), '已添加桌宠。'));
 byId('replace-pet').addEventListener('click', () => request(() => bridge.replacePet(byId('model-select').value, selectedId), '已切换干员。'));
 byId('save-limit').addEventListener('click', () => request(() => bridge.setMaxPets(Number(byId('max-pets').value)), '桌宠数量上限已保存。'));
+byId('autoStart').addEventListener('change', event => {
+  const enabled = event.target.checked;
+  request(async () => {
+    const result = await bridge.setAutoStart(enabled);
+    if (result.ok) {
+      currentData.autoStart = result;
+      byId('autoStart').checked = result.enabled;
+      byId('auto-start-status').textContent = result.enabled
+        ? '已启用。登录 Windows 后将直接显示桌宠，不打开设置窗口。'
+        : '默认关闭。开启后将直接显示桌宠，不打开设置窗口。';
+    } else byId('autoStart').checked = currentData.autoStart?.enabled || false;
+    return result;
+  }, enabled ? '开机自动启动已启用。' : '开机自动启动已关闭。');
+});
 byId('save-proxy').addEventListener('click', () => request(async () => {
   const result = await bridge.setProxy(byId('proxy-address').value, byId('proxy-port').value);
   if (result.ok) {

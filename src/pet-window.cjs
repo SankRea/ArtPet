@@ -6,6 +6,7 @@ const { VoiceCaption } = require('./voice-caption.cjs');
 
 const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 30, voiceEnabled: false, idleVoiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
 const LABELS = { default: '恢复待机', interact: '交互动作', relax: '休息', sit: '坐下', sleep: '睡眠', special: '特殊动作' };
+const IDLE_SLEEP_DELAY = 10 * 60 * 1000;
 const exists = win => win && !win.isDestroyed();
 const number = (value, fallback, min, max) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback;
 
@@ -27,7 +28,9 @@ class PetWindow {
     this.hitRects = []; this.animations = []; this.supported = []; this.dragging = null; this.walking = null;
     this.pose = 'default'; this.manualHold = false; this.falling = false; this.resolvedActions = {};
     this.actionVariants = {}; this.idleAnimations = []; this.currentAnimation = null;
-    this.nextBehavior = Date.now() + 9000 + Math.random() * 4000;
+    const now = Date.now();
+    this.nextBehavior = now + 9000 + Math.random() * 4000;
+    this.sleepAt = now + IDLE_SLEEP_DELAY;
     this.win = new BrowserWindow({
       ...size, x: Math.round(this.body.x), y: Math.round(this.body.y), title: `${this.model.name} · ArkPet`,
       transparent: true, backgroundColor: '#00000000', frame: false, resizable: false, maximizable: false,
@@ -59,6 +62,7 @@ class PetWindow {
   }
 
   size() { return { width: Math.round(420 * this.settings.scale), height: Math.round(380 * this.settings.scale) }; }
+  noteActivity() { this.sleepAt = Date.now() + IDLE_SLEEP_DELAY; }
   send(channel, data) { if (exists(this.win)) this.win.webContents.send(channel, data); }
   form() { return this.model.forms.find(form => form.id === this.settings.form); }
   serialise() { return { id: this.id, modelId: this.model.id, ...this.settings, x: Math.round(this.body.x), y: Math.round(this.body.y) }; }
@@ -103,6 +107,7 @@ class PetWindow {
     this.changed();
   }
   toggleVisible() {
+    this.noteActivity();
     if (!this.userHidden) { this.userHidden = true; this.endDrag(true); this.stopWalking(); this.win.hide(); this.changed(); } else this.show();
   }
   setFullscreenSuspended(value) {
@@ -118,6 +123,7 @@ class PetWindow {
     } else {
       const elapsed = Date.now() - this.suspendedAt;
       this.nextBehavior += elapsed;
+      this.sleepAt += elapsed;
       if (this.walking) this.walking.until += elapsed;
       this.suspendedAt = 0;
       this.win.webContents.setBackgroundThrottling(false);
@@ -127,6 +133,7 @@ class PetWindow {
   }
   reset() {
     this.endDrag(true); this.stopWalking();
+    this.noteActivity();
     const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
     Object.assign(this.body, { x: area.x + area.width - this.geometry.footX - 100, y: area.y + area.height - this.geometry.footY, vx: 0, vy: 0, support: null });
     this.show(); this.host.save();
@@ -140,6 +147,7 @@ class PetWindow {
     if ([15, 24, 30, 45, 60].includes(patch.frameRate)) this.settings.frameRate = patch.frameRate;
     if ('voiceVolume' in patch) this.settings.voiceVolume = number(patch.voiceVolume, previous.voiceVolume, 0, 1);
     if (Object.keys(DEFAULTS).every(key => previous[key] === this.settings[key])) return;
+    this.noteActivity();
     if (this.settings.alwaysOnTop !== previous.alwaysOnTop) this.win.setAlwaysOnTop(this.settings.alwaysOnTop, 'floating');
     if (this.settings.translucent !== previous.translucent) this.win.setOpacity(this.settings.translucent ? 0.55 : 1);
     if (this.settings.scale !== previous.scale) {
@@ -163,6 +171,7 @@ class PetWindow {
   setForm(id) {
     if (id === this.settings.form || !this.model.forms.some(form => form.id === id)) return;
     this.endDrag(true); this.stopWalking();
+    this.noteActivity();
     this.settings.form = id; this.ready = false; this.supported = [];
     this.manualHold = false; this.pose = 'default';
     this.host.save(); this.changed(); this.send('pet:form', id);
@@ -177,19 +186,21 @@ class PetWindow {
       this.resolvedActions[action], ...(Array.isArray(data.variants?.[action]) ? data.variants[action] : [])
     ])].filter(name => knownAnimations.has(name))]));
     const idle = new Map();
-    for (const action of ['relax', 'sit', 'sleep', 'special', 'default']) {
+    for (const action of ['relax', 'sit', 'special', 'default']) {
       for (const name of this.actionVariants[action] || []) {
         if (knownAnimations.get(name).duration > 0 && !idle.has(name)) idle.set(name, { action, name });
       }
     }
     this.idleAnimations = [...idle.values()];
     this.currentAnimation = this.resolvedActions.default;
+    this.noteActivity();
     this.error = ''; this.ready = true; this.changed();
   }
   switchModel(id) {
     const model = findModel(id);
     if (!model || model.id === this.model.id) return;
     this.endDrag(true); this.stopWalking();
+    this.noteActivity();
     this.model = model; this.settings.form = model.forms[0].id;
     this.voiceError = '';
     this.ready = false; this.error = ''; this.animations = []; this.resolvedActions = {}; this.supported = []; this.hitRects = [];
@@ -216,7 +227,7 @@ class PetWindow {
   startWalking(direction, manual = true) {
     if (this.fullscreenSuspended || !this.ready || !this.supported.includes('move') || ![-1, 1].includes(direction)) return;
     this.endDrag(true); this.stopWalking(); this.manualHold = false;
-    if (manual) { this.paused = false; this.show(); }
+    if (manual) { this.paused = false; this.noteActivity(); this.show(); }
     this.walking = { direction, until: Date.now() + 2400 + Math.random() * 3600 };
     this.pose = 'move'; this.nextBehavior = Date.now() + 15000;
     this.currentAnimation = this.resolvedActions.move;
@@ -226,7 +237,7 @@ class PetWindow {
     if (this.fullscreenSuspended || !this.ready || !this.supported.includes(action) || !Object.hasOwn(LABELS, action)) return;
     if (!this.actionVariants[action]?.includes(animation)) return;
     this.endDrag(true); this.stopWalking();
-    if (manual) this.paused = false;
+    if (manual) { this.paused = false; this.noteActivity(); }
     this.manualHold = manual && action !== 'default';
     this.pose = action;
     this.currentAnimation = animation;
@@ -238,7 +249,9 @@ class PetWindow {
   }
   interact() {
     if (this.fullscreenSuspended || !this.ready || this.settings.clickThrough || this.dragging) return;
+    this.noteActivity();
     if (this.supported.includes('interact')) { this.act('interact', true, false); this.manualHold = false; }
+    else if (this.pose === 'sleep' && this.supported.includes('default')) this.act('default', true, false);
     else { this.paused = false; this.show(); }
     const voice = this.host.voices.state(this.model.id);
     if (!this.settings.voiceEnabled || !voice.cached || !voice.clips.length) return;
@@ -258,6 +271,8 @@ class PetWindow {
   }
   startDrag() {
     if (this.fullscreenSuspended || this.settings.clickThrough || this.dragging) return;
+    this.noteActivity();
+    if (this.pose === 'sleep' && this.supported.includes('default')) this.act('default', false, false);
     this.stopWalking(); this.body.vx = 0; this.body.vy = 0;
     const cursor = screen.getCursorScreenPoint();
     this.dragging = { cursor, lastCursor: cursor, x: this.body.x, y: this.body.y, vx: 0, vy: 0, moved: false, lastTime: Date.now() };
@@ -274,8 +289,8 @@ class PetWindow {
     this.nextBehavior = Date.now() + 8000;
     this.send('pet:drag-end', { moved: drag.moved, cancelled: Boolean(cancelled) }); this.host.save(); this.host.wakeLoop();
   }
-  togglePause() { this.endDrag(true); this.stopWalking(); this.paused = !this.paused; this.changed(); }
-  reload() { this.ready = false; this.error = ''; this.endDrag(true); this.stopWalking(); this.changed(); this.win.webContents.reload(); }
+  togglePause() { this.endDrag(true); this.stopWalking(); this.noteActivity(); this.paused = !this.paused; this.changed(); }
+  reload() { this.ready = false; this.error = ''; this.endDrag(true); this.stopWalking(); this.noteActivity(); this.changed(); this.win.webContents.reload(); }
 
   menu() {
     return [
@@ -298,6 +313,7 @@ class PetWindow {
     ];
   }
   contextMenu() {
+    this.noteActivity();
     this.endDrag(true); this.stopWalking(); this.menuOpen = true; this.setIgnoring(false);
     Menu.buildFromTemplate(this.menu()).popup({ window: this.win, callback: () => { this.menuOpen = false; } });
   }
@@ -355,7 +371,15 @@ class PetWindow {
     }
     if (this.falling && this.walking) this.stopWalking();
     if (wasFalling && !this.falling) this.host.save();
-    if (this.settings.manualMode || this.manualHold || this.falling || this.walking || this.menuOpen || now < this.nextBehavior) return;
+    if (this.settings.manualMode || this.manualHold || this.falling || this.walking || this.menuOpen) return;
+    if (this.settings.autoActions && !hovered && now >= this.sleepAt && this.supported.includes('sleep')) {
+      if (this.pose !== 'sleep') {
+        const variants = this.actionVariants.sleep;
+        this.act('sleep', false, this.settings.idleVoiceEnabled, variants[Math.floor(Math.random() * variants.length)]);
+      } else this.nextBehavior = now + 60000;
+      return;
+    }
+    if (now < this.nextBehavior) return;
     this.nextBehavior = now + 7000 + Math.random() * 11000;
     // Deduplicate aliases (e.g. default/relax) by animation name, then avoid repeats.
     const idle = this.settings.autoActions ? this.idleAnimations.filter(item => item.name !== this.currentAnimation) : [];

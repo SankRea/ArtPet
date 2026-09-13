@@ -279,29 +279,21 @@ class PetWindow {
   reload() { this.ready = false; this.error = ''; this.endDrag(true); this.stopWalking(); this.changed(); this.win.webContents.reload(); }
 
   menu() {
-    const toggle = (label, key) => ({ label, type: 'checkbox', checked: this.settings[key], click: item => this.updateSettings({ [key]: item.checked }) });
     return [
       { label: `${this.model.name} · ${this.form().name}`, enabled: false },
       { label: '打开设置', click: () => this.host.openLauncher(this.id) },
       { label: '动作', enabled: this.ready && !this.fullscreenSuspended, submenu: [
-        ...Object.entries(LABELS).map(([action, label]) => ({ label, enabled: this.supported.includes(action), click: () => this.act(action) })),
-        { label: '向左移动', enabled: this.supported.includes('move'), click: () => this.startWalking(-1) },
-        { label: '向右移动', enabled: this.supported.includes('move'), click: () => this.startWalking(1) }
+        ...Object.entries(LABELS).filter(([action]) => this.supported.includes(action)).map(([action, label]) => ({ label, click: () => this.act(action) })),
+        ...(this.supported.includes('move') ? [
+          { label: '向左移动', click: () => this.startWalking(-1) },
+          { label: '向右移动', click: () => this.startWalking(1) }
+        ] : [])
       ] },
-      { label: '切换形态', enabled: this.model.forms.length > 1, submenu: this.model.forms.map(form => ({ label: form.name, type: 'radio', checked: this.settings.form === form.id, click: () => this.setForm(form.id) })) },
       { type: 'separator' },
-      toggle('手动模式', 'manualMode'), toggle('自动移动', 'wander'), toggle('自主动作', 'autoActions'),
-      toggle('重力与抛掷', 'gravity'), { ...toggle('窗口边缘停靠', 'windowEdges'), enabled: this.settings.gravity && this.host.globalState().windowDetection.available },
-      toggle('始终置顶', 'alwaysOnTop'), toggle('半透明', 'translucent'), toggle('鼠标穿透', 'clickThrough'),
-      { ...toggle('启用语音', 'voiceEnabled'), enabled: this.settings.voiceEnabled || this.host.voices.state(this.model.id).available },
-      toggle('闲置时播放语音', 'idleVoiceEnabled'),
-      toggle('显示语音文本', 'voiceTextEnabled'),
-      { label: '停止语音', enabled: this.settings.voiceEnabled, click: () => this.stopVoice() },
       { label: this.paused ? '恢复活动' : '暂停活动', click: () => this.togglePause() },
+      { label: '停止当前语音', enabled: this.settings.voiceEnabled, click: () => this.stopVoice() },
       { type: 'separator' },
       { label: this.userHidden ? '显示桌宠' : '隐藏桌宠', click: () => this.toggleVisible() },
-      { label: '重置桌宠位置', click: () => this.reset() },
-      { label: '重新加载模型', click: () => this.reload() },
       { label: '关闭当前桌宠', click: () => this.host.closePet(this.id) },
       { label: '退出应用', click: () => this.host.quit() }
     ];

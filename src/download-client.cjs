@@ -26,6 +26,34 @@ function normaliseProxy(value) {
   return `${url.protocol}//${url.host}`;
 }
 
+function normaliseProxyParts(address, port) {
+  const input = typeof address === 'string' ? address.trim() : '';
+  const portText = typeof port === 'number' || typeof port === 'string' ? String(port).trim() : '';
+  if (!input && !portText) return '';
+  if (!input) throw new Error('请填写代理地址。');
+  if (!/^\d{1,5}$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535) throw new Error('代理端口需要是 1～65535 的整数。');
+  const authority = (input.includes('://') ? input.slice(input.indexOf('://') + 3) : input).split(/[/?#]/, 1)[0];
+  const hasPort = authority.startsWith('[') ? /^\[[^\]]+\]:\d+$/.test(authority) : /:\d+$/.test(authority);
+  let url;
+  try { url = new URL(input.includes('://') ? input : `http://${input}`); }
+  catch { throw new Error('代理地址格式无效。'); }
+  if (!['http:', 'https:', 'socks:', 'socks4:', 'socks5:'].includes(url.protocol) || !url.hostname) throw new Error('代理地址仅支持 HTTP、HTTPS、SOCKS4 或 SOCKS5。');
+  if (url.username || url.password) throw new Error('代理地址暂不支持用户名和密码。');
+  if ((url.pathname && url.pathname !== '/') || url.search || url.hash) throw new Error('代理地址不能包含路径、查询参数或片段。');
+  if (hasPort || url.port) throw new Error('请将代理端口填写在单独的端口输入框中。');
+  const hostname = url.hostname.includes(':') && !url.hostname.startsWith('[') ? `[${url.hostname}]` : url.hostname;
+  return `${url.protocol}//${hostname}:${Number(portText)}`;
+}
+
+function splitProxy(value) {
+  const normalised = normaliseProxy(value);
+  if (!normalised) return { proxyAddress: '', proxyPort: '' };
+  const url = new URL(normalised);
+  const defaults = { 'http:': 80, 'https:': 443, 'socks:': 1080, 'socks4:': 1080, 'socks5:': 1080 };
+  const proxyAddress = url.protocol === 'http:' ? url.hostname : `${url.protocol}//${url.hostname}`;
+  return { proxyAddress, proxyPort: Number(url.port || defaults[url.protocol]) };
+}
+
 class DownloadClient {
   constructor(getProxy) {
     this.getProxy = getProxy;
@@ -78,4 +106,4 @@ class DownloadClient {
   }
 }
 
-module.exports = { DownloadClient, normaliseProxy };
+module.exports = { DownloadClient, normaliseProxy, normaliseProxyParts, splitProxy };

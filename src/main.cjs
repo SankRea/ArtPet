@@ -6,7 +6,7 @@ const { PetWindow } = require('./pet-window.cjs');
 const { DEFAULT_MODEL_ID, CATALOG_COMMIT, findModel } = require('./models.cjs');
 const { ModelLibrary } = require('./model-library.cjs');
 const { VoiceLibrary } = require('./voice-library.cjs');
-const { DownloadClient, normaliseProxy } = require('./download-client.cjs');
+const { DownloadClient, normaliseProxy, normaliseProxyParts, splitProxy } = require('./download-client.cjs');
 const defaultConfig = require('../config.json');
 const { WindowSurfaces } = require('./window-surfaces.cjs');
 const { floors } = require('./physics.cjs');
@@ -27,7 +27,7 @@ function operationState() {
   return modelOperation ? { mode: modelOperation.mode, modelId: modelOperation.modelId, name: modelOperation.name, progress: modelOperation.progress } : null;
 }
 function launcherState(includeCatalog = true) {
-  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state()), maxPets, proxyUrl, operation: operationState(), catalogCommit: CATALOG_COMMIT, ...globalState() };
+  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state()), maxPets, ...splitProxy(proxyUrl), operation: operationState(), catalogCommit: CATALOG_COMMIT, ...globalState() };
   if (includeCatalog) { state.models = library.list(); launcherCatalogRevision = library.revision; }
   return state;
 }
@@ -80,7 +80,7 @@ function saveNow() {
   clearTimeout(saveTimer);
   if (!settingsPath) return;
   try {
-    const contents = JSON.stringify({ version: 4, maxPets, proxyUrl, selectedId, pets: [...pets.values()].map(pet => pet.serialise()) }, null, 2);
+    const contents = JSON.stringify({ version: 4, maxPets, ...splitProxy(proxyUrl), selectedId, pets: [...pets.values()].map(pet => pet.serialise()) }, null, 2);
     if (contents === lastSavedText) return;
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(`${settingsPath}.tmp`, contents);
@@ -94,7 +94,10 @@ function load() {
   let saved;
   try { saved = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch { saved = {}; }
   if (!saved || typeof saved !== 'object') saved = {};
-  try { proxyUrl = normaliseProxy(saved.proxyUrl); } catch { proxyUrl = ''; }
+  try {
+    proxyUrl = Object.hasOwn(saved, 'proxyAddress') || Object.hasOwn(saved, 'proxyPort')
+      ? normaliseProxyParts(saved.proxyAddress, saved.proxyPort) : normaliseProxy(saved.proxyUrl);
+  } catch { proxyUrl = ''; }
   const limit = [3, 4].includes(saved.version) && Number.isInteger(saved.maxPets) ? saved.maxPets : defaultConfig.maxPets;
   maxPets = Number.isInteger(limit) && limit >= 1 && limit <= 100 ? limit : 1;
   if ([2, 3, 4].includes(saved.version) && Array.isArray(saved.pets)) {
@@ -185,11 +188,12 @@ function updateLimit(value) {
 }
 function updateProxy(value) {
   try {
-    proxyUrl = normaliseProxy(value);
+    if (!value || typeof value !== 'object') throw new Error('代理设置无效。');
+    proxyUrl = normaliseProxyParts(value.address, value.port);
     downloadRevision++;
     voices?.clearTextRequests();
     save(); changed();
-    return { ok: true, proxyUrl };
+    return { ok: true, ...splitProxy(proxyUrl) };
   } catch (error) { return { ok: false, error: error.message }; }
 }
 function closed(pet) {
@@ -207,7 +211,7 @@ function openLauncher(id) {
   if (exists(launcher)) { launcher.show(); launcher.focus(); changed(); return; }
   launcherCatalogRevision = -1;
   launcher = new BrowserWindow({
-    width: 460, height: 740, minWidth: 400, minHeight: 540, title: 'ArkPet 设置',
+    width: 780, height: 700, minWidth: 620, minHeight: 560, title: 'ArkPet 设置',
     backgroundColor: '#ffffff', autoHideMenuBar: true, show: false, icon: makeIcon(),
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });

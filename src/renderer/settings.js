@@ -5,6 +5,18 @@ let selectedId, petListSignature = '', formSignature = '', voiceSignature = '', 
 let catalogIndex = [], modelsById = new Map();
 let voicePreviewKey = '', voiceTextRevision = 0;
 
+function selectSettingsTab(name, focus = false) {
+  const tabs = [...document.querySelectorAll('[data-settings-tab]')];
+  if (!tabs.some(tab => tab.dataset.settingsTab === name)) return;
+  for (const tab of tabs) {
+    const selected = tab.dataset.settingsTab === name;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    if (selected && focus) tab.focus();
+  }
+  for (const panel of document.querySelectorAll('[data-settings-panel]')) panel.hidden = panel.dataset.settingsPanel !== name;
+}
+
 function options(select, records) {
   select.replaceChildren(...records.map(({ value, label }) => {
     const option = document.createElement('option'); option.value = value; option.textContent = label; return option;
@@ -31,7 +43,8 @@ function updateButtons() {
   byId('save-limit').disabled = busy;
   byId('max-pets').disabled = busy;
   byId('save-proxy').disabled = busy;
-  byId('proxy-url').disabled = busy;
+  byId('proxy-address').disabled = busy;
+  byId('proxy-port').disabled = busy;
   byId('download-voice').disabled = busy || !pet?.voice?.available;
   byId('play-voice').disabled = busy || !pet?.voiceEnabled || !pet?.voice?.cached || !pet?.ready || !pet?.visible || pet?.paused || pet?.fullscreenSuspended || !byId('voice-clip').value;
   byId('voice-clip').disabled = !pet?.voice?.cached;
@@ -87,7 +100,8 @@ function render(data) {
   selectedId = state?.id;
   if (catalogChanged) updateChoices();
   if (document.activeElement !== byId('max-pets')) byId('max-pets').value = data.maxPets;
-  if (document.activeElement !== byId('proxy-url')) byId('proxy-url').value = data.proxyUrl || '';
+  if (document.activeElement !== byId('proxy-address')) byId('proxy-address').value = data.proxyAddress || '';
+  if (document.activeElement !== byId('proxy-port')) byId('proxy-port').value = data.proxyPort || '';
   byId('pet-count').textContent = `${data.pets.length} / ${data.maxPets}`;
   renderOperation(data.operation);
   updateButtons();
@@ -167,9 +181,10 @@ byId('add-pet').addEventListener('click', () => request(() => bridge.addPet(byId
 byId('replace-pet').addEventListener('click', () => request(() => bridge.replacePet(byId('model-select').value, selectedId), '已切换干员。'));
 byId('save-limit').addEventListener('click', () => request(() => bridge.setMaxPets(Number(byId('max-pets').value)), '桌宠数量上限已保存。'));
 byId('save-proxy').addEventListener('click', () => request(async () => {
-  const result = await bridge.setProxy(byId('proxy-url').value);
+  const result = await bridge.setProxy(byId('proxy-address').value, byId('proxy-port').value);
   if (result.ok) {
-    byId('proxy-url').value = result.proxyUrl;
+    byId('proxy-address').value = result.proxyAddress;
+    byId('proxy-port').value = result.proxyPort;
     window.ArkPetVoiceTexts.clear(); voiceTextRevision++; voicePreviewKey = ''; updateVoicePreview();
   }
   return result;
@@ -177,6 +192,16 @@ byId('save-proxy').addEventListener('click', () => request(async () => {
 byId('cancel-download').addEventListener('click', () => { bridge.cancelDownload(); byId('operation-message').textContent = '正在取消下载…'; });
 byId('detach').addEventListener('click', () => bridge.detach());
 byId('quit-all').addEventListener('click', () => bridge.command('quit-all'));
+for (const tab of document.querySelectorAll('[data-settings-tab]')) {
+  tab.addEventListener('click', () => selectSettingsTab(tab.dataset.settingsTab));
+  tab.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    const tabs = [...document.querySelectorAll('[data-settings-tab]')], index = tabs.indexOf(tab);
+    selectSettingsTab(tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length].dataset.settingsTab, true);
+  });
+}
+selectSettingsTab('pet');
 bridge.onLauncherState(render);
 bridge.onLauncherProgress(operation => { if (currentData) currentData.operation = operation; renderOperation(operation); updateButtons(); });
 window.addEventListener('beforeunload', () => clearTimeout(searchTimer));

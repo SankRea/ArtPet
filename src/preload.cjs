@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('arkpet', {
   addPet: modelId => ipcRenderer.invoke('launcher:model', { mode: 'add', modelId }),
   replacePet: (modelId, id) => ipcRenderer.invoke('launcher:model', { mode: 'replace', modelId, id }),
   setMaxPets: value => ipcRenderer.invoke('launcher:limit', value),
-  setProxy: value => ipcRenderer.invoke('launcher:proxy', value),
+  setProxy: (address, port) => ipcRenderer.invoke('launcher:proxy', { address, port }),
   downloadVoice: id => ipcRenderer.invoke('launcher:voice-download', id),
   playVoice: (clipId, id) => ipcRenderer.send('pet:voice-play', { clipId, id }),
   voiceText: id => ipcRenderer.invoke('pet:voice-text', id),

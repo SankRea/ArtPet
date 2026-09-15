@@ -235,7 +235,6 @@ async function init() {
     });
     displayReady = true; app.render();
     applyState(prefs);
-    say('左键拖动 · 点击互动\n右键菜单 · 双击打开面板', 6500);
   } catch (error) {
     showError(error);
   }

@@ -123,6 +123,19 @@
           <button id="save-proxy" class="full-button" type="button">保存代理设置</button>
           <p class="inline-note">地址可带协议，例如 socks5://127.0.0.1；不填写协议时按 HTTP 处理。清空两个输入框并保存即可停用代理。</p>
         </section>
+
+        <section class="card ai-card" aria-labelledby="ai-heading">
+          <div class="card-heading"><div><h2 id="ai-heading">AI 对话（实验）</h2><p>使用自定义 OpenAI 兼容接口与当前干员对话。</p></div></div>
+          <div class="setting-row"><label for="ai-enabled">启用 AI 对话</label><input id="ai-enabled" type="checkbox"></div>
+          <div class="ai-fields">
+            <label class="wide" for="ai-gateway">网关地址<input id="ai-gateway" type="url" inputmode="url" spellcheck="false" placeholder="https://api.example.com/v1"></label>
+            <label class="wide" for="ai-key">API Key<input id="ai-key" type="password" autocomplete="off" spellcheck="false" placeholder="请输入 API Key"></label>
+            <div class="ai-model-field"><span id="ai-model-label">模型</span><div class="ai-model-row"><select id="ai-model" aria-labelledby="ai-model-label"><option value="">请先获取模型列表</option></select><button id="load-ai-models" type="button">获取模型</button></div></div>
+          </div>
+          <div class="utility-bar"><button id="test-ai" type="button">测试连接</button><button id="clear-ai-key" class="danger-subtle" type="button">清除密钥</button><button id="save-ai" class="primary" type="button">保存配置</button></div>
+          <p id="ai-status" class="inline-note" role="status"></p>
+          <p class="inline-note">填写网关和 API Key 后先获取模型并从列表选择。启用后，右键桌宠选择“与干员对话”。对话时会把 PRTS Wiki 人物资料、已缓存台词和当前上下文发送到所填网关；测试连接会产生一次很小的模型请求。</p>
+        </section>
       </div>
 
       <section class="card" aria-labelledby="storage-heading">
@@ -137,7 +150,7 @@
       <div class="utility-bar footer-actions"><button id="detach" type="button">关闭设置窗口</button><button id="quit-all" class="danger-subtle" type="button">退出应用</button></div>
     </div>
 
-    <footer>模型来自 Ark-Models · 桌宠设置自动保存 · 代理与数量设置需点击保存</footer>
+    <footer>模型来自 Ark-Models · 桌宠设置自动保存 · 代理、数量与 AI 设置需点击保存</footer>
   </main>
 </body>
 </html>

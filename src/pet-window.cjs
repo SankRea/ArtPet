@@ -200,6 +200,7 @@ class PetWindow {
   switchModel(id) {
     const model = findModel(id);
     if (!model || model.id === this.model.id) return;
+    this.host.closeAiChat(this.id);
     this.endDrag(true); this.stopWalking();
     this.noteActivity();
     this.model = model; this.settings.form = model.forms[0].id;
@@ -299,6 +300,7 @@ class PetWindow {
     return [
       { label: `${this.model.name} · ${this.form().name}`, enabled: false },
       { label: '打开设置', click: () => this.host.openLauncher(this.id) },
+      { label: '与干员对话', enabled: this.host.aiAvailable(), click: () => this.host.openAiChat(this.id) },
       { label: '切换干员', enabled: cachedModels.some(model => model.id !== this.model.id), submenu: cachedModels.map(model => ({
         label: `${model.name} · ${model.subtitle}`, type: 'radio', checked: model.id === this.model.id,
         click: () => { if (this.host.modelCached(model.id)) this.switchModel(model.id); }

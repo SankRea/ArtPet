@@ -7,7 +7,7 @@ h1, h2, p { margin-top: 0; }
 h1 { margin-bottom: 4px; font-size: 21px; font-weight: 650; letter-spacing: .02em; }
 h2 { margin: 0; font-size: 15px; font-weight: 650; }
 button, input, select { font: inherit; color: inherit; accent-color: var(--accent); }
-button, select, input[type="search"], input[type="number"], input[type="text"] { min-height: 34px; background: #fff; border: 1px solid #cfd3dc; border-radius: 7px; padding: 7px 10px; }
+button, select, input[type="search"], input[type="number"], input[type="text"], input[type="url"], input[type="password"] { min-height: 34px; background: #fff; border: 1px solid #cfd3dc; border-radius: 7px; padding: 7px 10px; }
 button { cursor: pointer; }
 button:hover:not(:disabled) { border-color: #9b94dc; background: #f7f6ff; }
 button:active:not(:disabled) { transform: translateY(1px); }
@@ -71,6 +71,15 @@ details p { margin: 8px 0; }
 .proxy-fields { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 10px; }
 .proxy-fields label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
 .proxy-fields input { width: 100%; color: #20242c; }
+.ai-card { grid-column: 1 / -1; }
+.ai-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.ai-fields label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+.ai-fields label.wide { grid-column: 1 / -1; }
+.ai-fields input, .ai-fields select { width: 100%; color: #20242c; }
+.ai-model-field { grid-column: 1 / -1; display: grid; gap: 6px; }
+.ai-model-field > span { color: var(--muted); font-size: 12px; }
+.ai-model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.ai-model-row button { min-width: 100px; }
 .full-button { width: 100%; margin-top: 10px; }
 .storage-path { display: block; padding: 10px 12px; overflow-wrap: anywhere; color: #3c4250; border: 1px solid #e3e5ea; border-radius: 8px; background: #fafafd; font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; line-height: 1.6; user-select: text; }
 .help-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 22px; color: var(--muted); font-size: 12px; line-height: 1.7; }
@@ -94,6 +103,8 @@ footer { margin-top: 16px; text-align: center; }
   .settings-tabs button { padding-inline: 4px; }
   .actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .proxy-fields { grid-template-columns: 1fr; }
+  .ai-fields { grid-template-columns: 1fr; }
+  .ai-fields label.wide { grid-column: auto; }
   .utility-bar { flex-wrap: wrap; }
   .utility-bar button { flex-basis: 140px; }
 }

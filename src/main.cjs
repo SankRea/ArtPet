@@ -10,6 +10,10 @@ const { DownloadClient, normaliseProxy, normaliseProxyParts, splitProxy } = requ
 const defaultConfig = require('../config.json');
 const { WindowSurfaces } = require('./window-surfaces.cjs');
 const { floors } = require('./physics.cjs');
+const { AiSettingsStore } = require('./ai-settings-store.cjs');
+const { PrtsProfileSource } = require('./prts-profile-source.cjs');
+const { AiClient } = require('./ai-client.cjs');
+const { AiChatWindows } = require('./ai-chat-window.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const AUTO_START_NAME = 'ArkPet Surtr';
@@ -17,6 +21,7 @@ const pets = new Map(), petsByWebContents = new Map(), petTrays = new Map();
 let launcher, launcherTray, selectedId, settingsPath, saveTimer, loopTimer, changeTimer, trayIcon, fullscreenTimer;
 let surfaces, quitting = false, lastTick = Date.now(), shortcutStatus = {};
 let library, voices, downloads, modelOperation = null, maxPets = 1, proxyUrl = '';
+let aiSettings, profiles, aiClient, aiChats;
 let environment, loopRunning = false, nextSurfaceScan = 0, launcherCatalogRevision = -1, lastSavedText;
 let dataDirectory, storageMode = 'system';
 let fullscreenActive = false;
@@ -50,7 +55,7 @@ function operationState() {
   return modelOperation ? { mode: modelOperation.mode, modelId: modelOperation.modelId, name: modelOperation.name, progress: modelOperation.progress } : null;
 }
 function launcherState(includeCatalog = true) {
-  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state(pet.id === selectedId)), maxPets, ...splitProxy(proxyUrl), autoStart: autoStartState(), storage: { directory: dataDirectory, mode: storageMode }, operation: operationState(), ...globalState() };
+  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state(pet.id === selectedId)), maxPets, ...splitProxy(proxyUrl), ai: aiSettings?.state() || {}, autoStart: autoStartState(), storage: { directory: dataDirectory, mode: storageMode }, operation: operationState(), ...globalState() };
   if (includeCatalog) { state.models = library.list(); launcherCatalogRevision = library.revision; }
   return state;
 }
@@ -189,6 +194,7 @@ function addPet(modelId, saved = {}) {
   const id = typeof saved.id === 'string' && !pets.has(saved.id) ? saved.id : randomUUID();
   const pet = new PetWindow({ globalState, secureWindow, changed, save, surfaces, voices, downloadVoice,
     cachedModels: () => library.list().filter(model => model.cached), modelCached: id => library.isCached(id),
+    aiAvailable: () => aiSettings?.state().ready || false, openAiChat, closeAiChat: id => aiChats?.closePet(id),
     environment: () => environment, wakeLoop, openLauncher, closePet, quit: () => app.quit(), closed, spawnIndex: pets.size }, { ...saved, id, modelId });
   pets.set(id, pet); petsByWebContents.set(pet.webContentsId, pet); selectedId = id; changed(); save();
   return pet;
@@ -274,13 +280,33 @@ function updateProxy(value) {
     proxyUrl = normaliseProxyParts(value.address, value.port);
     const saveError = saveNow();
     if (saveError) { proxyUrl = previous; return { ok: false, error: `无法保存代理设置：${saveError}` }; }
-    voices?.clearRequests();
+    voices?.clearRequests(); profiles?.clear();
     changed();
     return { ok: true, ...splitProxy(proxyUrl) };
   } catch (error) { return { ok: false, error: error.message }; }
 }
+async function updateAi(value) {
+  const result = await aiSettings.save(value);
+  if (result.ok) {
+    aiClient.clearAll(); aiChats.refresh(); changed();
+  }
+  return result;
+}
+async function clearAiKey() {
+  const result = await aiSettings.clearKey();
+  if (result.ok) {
+    aiClient.clearAll(); aiChats.refresh(); changed();
+  }
+  return result;
+}
+function openAiChat(id) {
+  const pet = pets.get(id);
+  if (pet && aiSettings?.state().ready) aiChats.open(pet);
+  else if (pet) openLauncher(id);
+}
 function closed(pet) {
   if (quitting) return;
+  aiChats?.closePet(pet.id);
   pets.delete(pet.id);
   petsByWebContents.delete(pet.webContentsId);
   petTrays.get(pet.id)?.destroy(); petTrays.delete(pet.id);
@@ -379,6 +405,10 @@ function registerIpc() {
   ipcMain.handle('launcher:model', (event, request) => trusted(event) && event.sender === launcher?.webContents && request ? selectModel(request) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:limit', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateLimit(value) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:proxy', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateProxy(value) : { ok: false, error: '请求无效。' });
+  ipcMain.handle('launcher:ai-settings', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateAi(value) : { ok: false, error: '请求无效。' });
+  ipcMain.handle('launcher:ai-models', (event, value) => trusted(event) && event.sender === launcher?.webContents ? aiClient.listModels(value) : { ok: false, error: '请求无效。' });
+  ipcMain.handle('launcher:ai-test', (event, value) => trusted(event) && event.sender === launcher?.webContents ? aiClient.test(value) : { ok: false, error: '请求无效。' });
+  ipcMain.handle('launcher:ai-key-clear', event => trusted(event) && event.sender === launcher?.webContents ? clearAiKey() : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:auto-start', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateAutoStart(value) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:voice-download', (event, id) => trusted(event) && event.sender === launcher?.webContents ? downloadVoice(id) : { ok: false, error: '请求无效。' });
   ipcMain.on('pet:voice-play', (event, { clipId, id } = {}) => {
@@ -417,6 +447,7 @@ function registerIpc() {
   ipcMain.on('pet:drag-start', event => { if (trusted(event)) senderPet(event)?.startDrag(); });
   ipcMain.on('pet:drag-end', (event, cancelled) => { if (trusted(event)) senderPet(event)?.endDrag(Boolean(cancelled)); });
   ipcMain.on('pet:context-menu', event => { if (trusted(event)) senderPet(event)?.contextMenu(); });
+  aiChats.register(ipcMain);
 }
 
 function registerProtocol() {
@@ -467,11 +498,16 @@ else {
     }
     if (!argv.includes('--standalone') || modelOperation) openLauncher();
   });
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     prepareDataDirectory();
     const saved = load(), previousSelection = selectedId;
     downloads = new DownloadClient(() => proxyUrl);
-    library = new ModelLibrary(dataDirectory, downloads); voices = new VoiceLibrary(dataDirectory, downloads); surfaces = new WindowSurfaces(screen);
+    library = new ModelLibrary(dataDirectory, downloads); voices = new VoiceLibrary(dataDirectory, downloads);
+    profiles = new PrtsProfileSource(dataDirectory, downloads);
+    aiSettings = new AiSettingsStore(dataDirectory); await aiSettings.load();
+    aiClient = new AiClient(aiSettings, profiles, voices);
+    aiChats = new AiChatWindows({ settings: aiSettings, client: aiClient, getPet: id => pets.get(id), secureWindow });
+    surfaces = new WindowSurfaces(screen);
     const refreshDisplays = () => { const displays = screen.getAllDisplays(); environment = { displays, floors: floors(displays) }; };
     refreshDisplays();
     checkFullscreen();
@@ -500,7 +536,7 @@ else {
     for (const pet of pets.values()) pet.changed();
   }).catch(error => { dialog.showErrorBox('ArkPet 启动失败', error.message); app.quit(); });
   app.on('before-quit', () => {
-    quitting = true; modelOperation?.controller.abort(); clearTimeout(loopTimer); clearTimeout(changeTimer); clearInterval(fullscreenTimer); saveNow(); globalShortcut.unregisterAll();
+    quitting = true; modelOperation?.controller.abort(); aiChats?.closeAll(); clearTimeout(loopTimer); clearTimeout(changeTimer); clearInterval(fullscreenTimer); saveNow(); globalShortcut.unregisterAll();
     launcherTray?.destroy(); for (const tray of petTrays.values()) tray.destroy(); petTrays.clear();
   });
   app.on('window-all-closed', () => app.quit());

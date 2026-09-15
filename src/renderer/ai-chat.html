@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'">
+  <title>干员对话</title>
+  <link rel="stylesheet" href="ai-chat.css">
+  <script src="ai-chat.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div><h1 id="operator-name">干员对话</h1><p id="status">正在准备对话…</p></div>
+      <span>实验功能</span>
+    </header>
+    <section id="messages" aria-live="polite" aria-label="对话记录"></section>
+    <p id="empty-message">对话会按需读取 PRTS Wiki 的干员档案，并参考已经下载的语音台词。</p>
+    <p id="notice" role="status"></p>
+    <form id="chat-form">
+      <label for="chat-input">发送给干员</label>
+      <textarea id="chat-input" maxlength="2000" rows="3" placeholder="和干员说点什么…"></textarea>
+      <div class="actions"><button id="clear-chat" type="button">清空对话</button><button id="send-message" class="primary" type="submit">发送</button></div>
+    </form>
+    <footer><span>人物资料来源：PRTS Wiki</span><button id="open-source" type="button">查看原文</button></footer>
+  </main>
+</body>
+</html>

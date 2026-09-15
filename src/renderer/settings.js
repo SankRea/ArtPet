@@ -4,6 +4,7 @@ const booleanKeys = ['wander', 'autoActions', 'manualMode', 'gravity', 'windowEd
 let selectedId, petListSignature = '', formSignature = '', voiceSignature = '', currentData, uiBusy = false, searchTimer;
 let catalogIndex = [], modelsById = new Map();
 let voicePreviewKey = '';
+let aiDirty = false;
 
 function selectSettingsTab(name, focus = false) {
   const tabs = [...document.querySelectorAll('[data-settings-tab]')];
@@ -32,6 +33,30 @@ function updateChoices() {
   byId('catalog-info').textContent = `Ark-Models · ${matches.length} / ${currentData.models.length} 个干员与时装条目`;
   updateButtons();
 }
+function setAiModels(models, selected = '') {
+  const values = [...new Set(models.filter(value => typeof value === 'string' && value))];
+  const records = [{ value: '', label: values.length ? '请选择模型' : '请先获取模型列表' }, ...values.map(value => ({ value, label: value }))];
+  if (selected && !values.includes(selected)) records.splice(1, 0, { value: selected, label: `${selected}（已保存）` });
+  options(byId('ai-model'), records);
+  if (selected && records.some(item => item.value === selected)) byId('ai-model').value = selected;
+}
+function renderAi(ai = {}) {
+  if (!aiDirty) {
+    byId('ai-enabled').checked = Boolean(ai.enabled);
+    byId('ai-gateway').value = ai.gateway || '';
+    const known = [...byId('ai-model').options].map(option => option.value);
+    if (ai.model && !known.includes(ai.model)) byId('ai-model').add(new Option(`${ai.model}（已保存）`, ai.model));
+    byId('ai-model').value = ai.model || '';
+  }
+  byId('ai-key').placeholder = ai.hasKey ? '已安全保存；留空保持不变' : '请输入 API Key';
+  byId('ai-status').textContent = ai.error || (!ai.encryptionAvailable
+    ? '系统密钥存储不可用，暂时无法安全保存 API Key。'
+    : ai.ready ? `已启用 · ${ai.model}` : ai.hasKey || ai.gateway || ai.model ? '配置已保存，当前未启用。' : '默认关闭。填写配置并保存后，可从桌宠右键菜单开始对话。');
+}
+function aiForm() {
+  return { enabled: byId('ai-enabled').checked, gateway: byId('ai-gateway').value,
+    apiKey: byId('ai-key').value, model: byId('ai-model').value };
+}
 function updateButtons() {
   if (!currentData) return;
   const busy = uiBusy || Boolean(currentData.operation), model = modelsById.get(byId('model-select').value);
@@ -45,6 +70,8 @@ function updateButtons() {
   byId('save-proxy').disabled = busy;
   byId('proxy-address').disabled = busy;
   byId('proxy-port').disabled = busy;
+  for (const id of ['ai-enabled', 'ai-gateway', 'ai-key', 'ai-model', 'load-ai-models', 'save-ai', 'test-ai']) byId(id).disabled = busy;
+  byId('clear-ai-key').disabled = busy || !currentData.ai?.hasKey;
   byId('autoStart').disabled = busy || !currentData.autoStart?.available;
   byId('download-voice').disabled = busy || !pet?.voice?.available;
   byId('play-voice').disabled = busy || !pet?.voiceEnabled || !pet?.voice?.cached || !pet?.ready || !pet?.visible || pet?.paused || pet?.fullscreenSuspended || !byId('voice-clip').value;
@@ -101,6 +128,7 @@ function render(data) {
   if (document.activeElement !== byId('max-pets')) byId('max-pets').value = data.maxPets;
   if (document.activeElement !== byId('proxy-address')) byId('proxy-address').value = data.proxyAddress || '';
   if (document.activeElement !== byId('proxy-port')) byId('proxy-port').value = data.proxyPort || '';
+  renderAi(data.ai);
   const autoStart = data.autoStart || { available: false, enabled: false, registered: false, error: '无法读取开机自动启动状态。' };
   byId('autoStart').checked = autoStart.enabled;
   byId('auto-start-status').textContent = autoStart.error || (autoStart.enabled
@@ -214,6 +242,43 @@ byId('save-proxy').addEventListener('click', () => request(async () => {
   }
   return result;
 }, '下载代理设置已保存。'));
+byId('ai-enabled').addEventListener('change', () => { aiDirty = true; });
+byId('ai-model').addEventListener('change', () => { aiDirty = true; });
+for (const id of ['ai-gateway', 'ai-key']) byId(id).addEventListener('input', () => {
+  aiDirty = true; setAiModels([], '');
+});
+byId('load-ai-models').addEventListener('click', () => request(async () => {
+  const selected = byId('ai-model').value;
+  const result = await bridge.listAiModels(aiForm());
+  if (result.ok) {
+    setAiModels(result.models, result.models.includes(selected) ? selected : '');
+    aiDirty = true;
+    result.warning = `已加载 ${result.models.length} 个模型，请从列表中选择。`;
+  }
+  return result;
+}, '模型列表已加载。'));
+byId('save-ai').addEventListener('click', () => request(async () => {
+  const result = await bridge.setAi(aiForm());
+  if (result.ok) aiDirty = false;
+  if (result.ai) { currentData.ai = result.ai; renderAi(result.ai); }
+  if (result.ok) byId('ai-key').value = '';
+  return result;
+}, 'AI 对话配置已保存。'));
+byId('test-ai').addEventListener('click', () => request(async () => {
+  const result = await bridge.testAi(aiForm());
+  if (result.ok) result.warning = result.message;
+  return result;
+}, 'AI 接口连接成功。'));
+byId('clear-ai-key').addEventListener('click', () => {
+  if (!window.confirm('清除已保存的 API Key 并停用 AI 对话？')) return;
+  request(async () => {
+    const result = await bridge.clearAiKey();
+    if (result.ok) aiDirty = false;
+    if (result.ai) { currentData.ai = result.ai; renderAi(result.ai); }
+    if (result.ok) byId('ai-key').value = '';
+    return result;
+  }, 'API Key 已清除，AI 对话已停用。');
+});
 byId('cancel-download').addEventListener('click', () => { bridge.cancelDownload(); byId('operation-message').textContent = '正在取消下载…'; });
 byId('detach').addEventListener('click', () => bridge.detach());
 byId('quit-all').addEventListener('click', () => bridge.command('quit-all'));

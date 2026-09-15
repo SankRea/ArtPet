@@ -16,7 +16,8 @@ class PetWindow {
     this.settings = { ...DEFAULTS, scale: number(saved.scale, DEFAULTS.scale, 0.5, 1.5), speed: number(saved.speed, 40, 15, 90), frameRate: [15, 24, 30, 45, 60].includes(saved.frameRate) ? saved.frameRate : DEFAULTS.frameRate, voiceVolume: number(saved.voiceVolume, 0.6, 0, 1) };
     for (const key of Object.keys(DEFAULTS)) if (typeof DEFAULTS[key] === 'boolean' && typeof saved[key] === 'boolean') this.settings[key] = saved[key];
     this.settings.form = this.model.forms.find(form => form.id === saved.form)?.id || this.model.forms[0].id;
-    this.geometry = { footX: 210 * this.settings.scale, footY: 366 * this.settings.scale, halfWidth: 55 * this.settings.scale };
+    this.geometry = { footX: 210 * this.settings.scale, footY: 366 * this.settings.scale, halfWidth: 55 * this.settings.scale,
+      visualLeft: 0, visualRight: 420 * this.settings.scale };
     const size = this.size(), area = screen.getPrimaryDisplay().workArea;
     this.body = { x: number(saved.x, area.x + area.width - size.width - 36 - host.spawnIndex * 90, -100000, 100000), y: number(saved.y, area.y + area.height - this.geometry.footY, -100000, 100000), vx: 0, vy: 0, support: null };
     this.ready = false; this.error = ''; this.paused = false; this.ignored = false; this.menuOpen = false;
@@ -92,7 +93,7 @@ class PetWindow {
     const { body, geometry } = this;
     const area = screen.getDisplayNearestPoint({ x: Math.round(body.x + geometry.footX), y: Math.round(body.y + geometry.footY - 1) }).workArea;
     const previousX = body.x, previousY = body.y;
-    body.x = clamp(body.x, area.x + geometry.halfWidth - geometry.footX, area.x + area.width - geometry.halfWidth - geometry.footX);
+    body.x = clamp(body.x, area.x - geometry.visualLeft, area.x + area.width - geometry.visualRight);
     body.y = clamp(body.y, area.y, area.y + area.height - geometry.footY);
     if (body.x !== previousX) body.vx = 0;
     if (body.y !== previousY && body.y === area.y && body.vy < 0) body.vy = 0;
@@ -153,7 +154,7 @@ class PetWindow {
     if (this.settings.scale !== previous.scale) {
       this.endDrag(true); this.stopWalking();
       const ratio = this.settings.scale / previous.scale, footX = this.body.x + this.geometry.footX, footY = this.body.y + this.geometry.footY;
-      for (const key of ['footX', 'footY', 'halfWidth']) this.geometry[key] *= ratio;
+      for (const key of ['footX', 'footY', 'halfWidth', 'visualLeft', 'visualRight']) this.geometry[key] *= ratio;
       this.body.x = footX - this.geometry.footX; this.body.y = footY - this.geometry.footY;
       this.contain();
       // Resize and reposition together so move events cannot restore the old origin.
@@ -211,10 +212,11 @@ class PetWindow {
   }
   setGeometry(data) {
     const [contentWidth, contentHeight] = this.win.getContentSize();
-    if (!data || data.width !== contentWidth || data.height !== contentHeight || !['footX', 'footY', 'halfWidth'].every(key => Number.isFinite(data[key]))) return;
-    if (data.footX < 0 || data.footX > contentWidth || data.footY < 0 || data.footY > contentHeight) return;
+    if (!data || data.width !== contentWidth || data.height !== contentHeight || !['footX', 'footY', 'halfWidth', 'visualLeft', 'visualRight'].every(key => Number.isFinite(data[key]))) return;
+    if (data.footX < 0 || data.footX > contentWidth || data.footY < 0 || data.footY > contentHeight || data.visualLeft < 0 || data.visualRight > contentWidth || data.visualLeft >= data.visualRight) return;
     const footX = this.body.x + this.geometry.footX, footY = this.body.y + this.geometry.footY;
-    this.geometry = { footX: data.footX, footY: data.footY, halfWidth: clamp(data.halfWidth, 5, contentWidth / 2) };
+    this.geometry = { footX: data.footX, footY: data.footY, halfWidth: clamp(data.halfWidth, 5, contentWidth / 2),
+      visualLeft: data.visualLeft, visualRight: data.visualRight };
     this.body.x = footX - this.geometry.footX; this.body.y = footY - this.geometry.footY;
     this.contain(); this.place(); this.host.wakeLoop();
   }

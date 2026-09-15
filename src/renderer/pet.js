@@ -62,8 +62,11 @@ function layout() {
   fit = Math.min((innerWidth - 24) / envelope.width, (innerHeight - 94) / envelope.height);
   world.scale.set(fit * direction, fit);
   world.position.set(innerWidth / 2 - (envelope.minX + envelope.maxX) / 2 * fit * direction, innerHeight - 10 - envelope.maxY * fit);
+  const visualX1 = world.x + envelope.minX * fit * direction, visualX2 = world.x + envelope.maxX * fit * direction;
   bridge.geometry({ width: innerWidth, height: innerHeight, footX: world.x + idleBounds.centerX * fit * direction,
-    footY: world.y + idleBounds.bottom * fit, halfWidth: Math.max(8, idleBounds.width * fit * 0.24) });
+    footY: world.y + idleBounds.bottom * fit, halfWidth: Math.max(8, idleBounds.width * fit * 0.24),
+    visualLeft: Math.max(0, Math.floor(Math.min(visualX1, visualX2) - 4)),
+    visualRight: Math.min(innerWidth, Math.ceil(Math.max(visualX1, visualX2) + 4)) });
   updateHitArea();
   if (displayReady) app.render();
 }

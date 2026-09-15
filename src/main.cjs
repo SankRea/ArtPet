@@ -187,7 +187,9 @@ function secureWindow(win) {
 function addPet(modelId, saved = {}) {
   if (pets.size >= maxPets || !findModel(modelId) || !library.isCached(modelId)) return;
   const id = typeof saved.id === 'string' && !pets.has(saved.id) ? saved.id : randomUUID();
-  const pet = new PetWindow({ globalState, secureWindow, changed, save, surfaces, voices, downloadVoice, environment: () => environment, wakeLoop, openLauncher, closePet, quit: () => app.quit(), closed, spawnIndex: pets.size }, { ...saved, id, modelId });
+  const pet = new PetWindow({ globalState, secureWindow, changed, save, surfaces, voices, downloadVoice,
+    cachedModels: () => library.list().filter(model => model.cached), modelCached: id => library.isCached(id),
+    environment: () => environment, wakeLoop, openLauncher, closePet, quit: () => app.quit(), closed, spawnIndex: pets.size }, { ...saved, id, modelId });
   pets.set(id, pet); petsByWebContents.set(pet.webContentsId, pet); selectedId = id; changed(); save();
   return pet;
 }

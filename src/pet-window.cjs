@@ -295,9 +295,14 @@ class PetWindow {
   reload() { this.ready = false; this.error = ''; this.endDrag(true); this.stopWalking(); this.noteActivity(); this.changed(); this.win.webContents.reload(); }
 
   menu() {
+    const cachedModels = this.host.cachedModels();
     return [
       { label: `${this.model.name} · ${this.form().name}`, enabled: false },
       { label: '打开设置', click: () => this.host.openLauncher(this.id) },
+      { label: '切换干员', enabled: cachedModels.some(model => model.id !== this.model.id), submenu: cachedModels.map(model => ({
+        label: `${model.name} · ${model.subtitle}`, type: 'radio', checked: model.id === this.model.id,
+        click: () => { if (this.host.modelCached(model.id)) this.switchModel(model.id); }
+      })) },
       { label: '动作', enabled: this.ready && !this.fullscreenSuspended, submenu: [
         ...Object.entries(LABELS).filter(([action]) => this.supported.includes(action)).map(([action, label]) => ({ label, click: () => this.act(action) })),
         ...(this.supported.includes('move') ? [

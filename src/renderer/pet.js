@@ -6,7 +6,7 @@ const loading = document.querySelector('#loading');
 const modelUrl = filename => renderModel.assetBase + encodeURIComponent(filename);
 let app, pet, world, envelope, renderModel, fit = 1, direction = 1, bubbleTimer;
 let prefs = { paused: false, visible: true, wander: true }, pose = 'default', dragging = false, pointerPressed = false;
-let actionMap = {}, actionVariants = {}, idleBounds, displayReady = false, animated = false, hitElapsed = 0, lastHitSignature = '', lastPetRect = '';
+let actionMap = {}, actionVariants = {}, animationBottoms = new Map(), idleBounds, currentAnimation, displayReady = false, animated = false, hitElapsed = 0, lastHitSignature = '', lastPetRect = '';
 const voicePlayer = new window.ArkPetVoice(data => bridge.voiceCaption(data), (modelId, message) => bridge.voiceError(modelId, message));
 
 function say(text, duration = 3200) {
@@ -23,7 +23,7 @@ function play(action, animation) {
   pet.skeleton.setToSetupPose();
   pet.state.setAnimation(0, name, true);
   pet.update(0);
-  pose = action;
+  pose = action; currentAnimation = name;
   animated = pet.spineData.animations.find(animation => animation.name === name)?.duration > 0;
   if (displayReady) { app.render(); updateHitArea(); updatePlayback(); }
 }
@@ -31,7 +31,7 @@ function play(action, animation) {
 function applyAction({ action, manual = true, voice = true, animation }) {
   if (!pet) return;
   if (!actionMap[action]) { say('当前模型不支持此动作。'); return; }
-  play(action, animation);
+  play(action, animation); layout();
   const clipId = { interact: '034', special: '036', relax: '010', sit: '010', sleep: '010' }[action];
   if (voice && clipId) voicePlayer.play(clipId, manual);
 }
@@ -40,8 +40,10 @@ function applyAction({ action, manual = true, voice = true, animation }) {
 // The resulting fixed envelope prevents the character from bouncing as bounds change.
 function measureEnvelope() {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const bottoms = new Map();
   const enabledNames = new Set(Object.values(actionVariants).flat());
   for (const animation of pet.spineData.animations.filter(item => enabledNames.has(item.name))) {
+    let bottom = -Infinity;
     pet.state.clearTracks(); pet.skeleton.setToSetupPose();
     pet.state.setAnimation(0, animation.name, false);
     for (let frame = 0; frame <= 16; frame++) {
@@ -50,9 +52,12 @@ function measureEnvelope() {
       if (rect.width <= 0 || rect.height <= 0) continue;
       minX = Math.min(minX, rect.x); minY = Math.min(minY, rect.y);
       maxX = Math.max(maxX, rect.x + rect.width); maxY = Math.max(maxY, rect.y + rect.height);
+      bottom = Math.max(bottom, rect.y + rect.height);
     }
+    if (Number.isFinite(bottom)) bottoms.set(animation.name, bottom);
   }
   if (![minX, minY, maxX, maxY].every(Number.isFinite) || maxX <= minX || maxY <= minY) throw new Error('模型没有可显示的骨骼区域。');
+  animationBottoms = bottoms;
   return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
 }
 
@@ -63,8 +68,9 @@ function layout() {
   world.scale.set(fit * direction, fit);
   world.position.set(innerWidth / 2 - (envelope.minX + envelope.maxX) / 2 * fit * direction, innerHeight - 10 - envelope.maxY * fit);
   const visualX1 = world.x + envelope.minX * fit * direction, visualX2 = world.x + envelope.maxX * fit * direction;
+  const animationBottom = animationBottoms.get(currentAnimation) ?? idleBounds.bottom;
   bridge.geometry({ width: innerWidth, height: innerHeight, footX: world.x + idleBounds.centerX * fit * direction,
-    footY: world.y + idleBounds.bottom * fit, halfWidth: Math.max(8, idleBounds.width * fit * 0.24),
+    footY: world.y + animationBottom * fit, halfWidth: Math.max(8, idleBounds.width * fit * 0.24),
     visualLeft: Math.max(0, Math.floor(Math.min(visualX1, visualX2) - 4)),
     visualRight: Math.min(innerWidth, Math.ceil(Math.max(visualX1, visualX2) + 4)) });
   updateHitArea();
@@ -168,9 +174,8 @@ bridge.onForm(id => { try { configureForm(id); } catch (error) { showError(error
 bridge.onMotion(({ walking, direction: nextDirection }) => {
   if (!pet) return;
   if (walking) {
-    direction = nextDirection; layout();
-    play('move');
-  } else if (pose === 'move') play('default');
+    direction = nextDirection; play('move'); layout();
+  } else if (pose === 'move') { play('default'); layout(); }
 });
 function applyState(value) {
   prefs = value;

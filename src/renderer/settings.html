@@ -81,6 +81,17 @@
               <div class="slider-row"><label for="voiceVolume">语音音量</label><output id="voiceVolume-value" for="voiceVolume">60%</output><input id="voiceVolume" type="range" min="0" max="100" step="5" value="60"></div>
             </details>
           </section>
+
+          <section class="card preferences reminder-card" aria-labelledby="reminder-heading">
+            <div class="card-heading"><div><h2 id="reminder-heading">闹钟提醒</h2><p>让当前干员每天在固定时间提醒你。</p></div></div>
+            <div class="setting-row"><label for="reminderEnabled">每天定时提醒</label><input id="reminderEnabled" type="checkbox"></div>
+            <div class="reminder-fields">
+              <label for="reminderTime">提醒时间<input id="reminderTime" type="time" value="09:00"></label>
+              <label for="reminderClip">提醒语音<select id="reminderClip"></select></label>
+            </div>
+            <div class="voice-preview reminder-preview"><p id="reminder-clip-text" aria-live="polite">请选择提醒语音。</p></div>
+            <p class="inline-note">应用运行且桌宠可见时提醒。到点后会播放所选语音并显示对应字幕；暂停活动时仅显示台词。隐藏或全屏期间若错过该分钟，将跳过本次提醒。</p>
+          </section>
         </div>
 
         <section class="card quick-card" aria-labelledby="quick-heading">

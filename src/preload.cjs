@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('arkpet', {
   onAction: callback => subscribe('pet:action', callback),
   onVoice: callback => subscribe('pet:voice-play', callback),
   onVoiceStop: callback => subscribe('pet:voice-stop', callback),
+  onReminder: callback => subscribe('pet:reminder', callback),
   onForm: callback => subscribe('pet:form', callback),
   onMotion: callback => subscribe('pet:motion', callback),
   onDragging: callback => subscribe('pet:dragging', callback),

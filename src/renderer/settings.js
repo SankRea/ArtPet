@@ -1,6 +1,6 @@
 const bridge = window.arkpet;
 const byId = id => document.getElementById(id);
-const booleanKeys = ['wander', 'autoActions', 'manualMode', 'gravity', 'windowEdges', 'alwaysOnTop', 'translucent', 'clickThrough', 'voiceEnabled', 'idleVoiceEnabled', 'voiceTextEnabled'];
+const booleanKeys = ['wander', 'autoActions', 'manualMode', 'gravity', 'windowEdges', 'alwaysOnTop', 'translucent', 'clickThrough', 'voiceEnabled', 'idleVoiceEnabled', 'voiceTextEnabled', 'reminderEnabled'];
 let selectedId, petListSignature = '', formSignature = '', voiceSignature = '', currentData, uiBusy = false, searchTimer;
 let catalogIndex = [], modelsById = new Map();
 let voicePreviewKey = '';
@@ -92,6 +92,17 @@ function updateVoicePreview() {
   const clip = pet.voice.clips.find(item => item.id === clipId);
   byId('voice-text').textContent = clip?.text || '当前语音暂无对应的中文文本。';
 }
+function updateReminderPreview() {
+  const pet = currentData?.pets.find(item => item.id === selectedId), clips = pet?.voice?.clips || [];
+  const cached = Boolean(pet?.voice?.cached && clips.length);
+  byId('reminderClip').disabled = !cached;
+  if (!cached) {
+    byId('reminder-clip-text').textContent = pet?.voice?.available ? '请先在“语音”中下载当前干员的语音，再选择提醒语音。' : '当前干员暂无可用语音。';
+    return;
+  }
+  const clip = clips.find(item => item.id === byId('reminderClip').value);
+  byId('reminder-clip-text').textContent = clip?.text || '当前语音暂无对应的中文文本。';
+}
 async function request(work, success) {
   uiBusy = true; updateButtons(); byId('operation-message').textContent = '';
   try {
@@ -154,6 +165,7 @@ function render(data) {
   if (!state) { voicePreviewKey = ''; byId('status').textContent = '未添加桌宠'; return; }
   byId('pet-select').value = state.id;
   for (const key of booleanKeys) byId(key).checked = state[key];
+  if (document.activeElement !== byId('reminderTime')) byId('reminderTime').value = state.reminderTime;
   byId('wander').disabled = state.manualMode;
   byId('autoActions').disabled = state.manualMode;
   byId('windowEdges').disabled = !state.gravity || !data.windowDetection.available;
@@ -167,15 +179,20 @@ function render(data) {
   const nextVoiceSignature = voice ? `${voice.id}:${voice.cached}:${voice.clips.map(clip => clip.id).join(',')}` : '';
   if (nextVoiceSignature !== voiceSignature) {
     voiceSignature = nextVoiceSignature;
-    options(byId('voice-clip'), (voice?.clips || []).map(clip => ({ value: clip.id, label: clip.label === '戳一下' ? '点击交互' : clip.label || clip.id })));
+    const clipOptions = (voice?.clips || []).map(clip => ({ value: clip.id, label: clip.label === '戳一下' ? '点击交互' : clip.label || clip.id }));
+    options(byId('voice-clip'), clipOptions);
+    options(byId('reminderClip'), clipOptions);
     if (voice?.clips.some(clip => clip.id === '034')) byId('voice-clip').value = '034';
   }
+  const reminderClipId = (voice?.clips || []).some(clip => clip.id === state.reminderClipId) ? state.reminderClipId : (voice?.clips[0]?.id || '');
+  if (document.activeElement !== byId('reminderClip')) byId('reminderClip').value = reminderClipId;
   byId('voice-controls').hidden = !state.voiceEnabled;
   byId('voice-status').textContent = state.voiceError || (!voice?.available ? '当前干员无法读取 PRTS 语音。' : voice.cached ? `${voice.language} · PRTS Wiki · 已下载` : 'PRTS Wiki 语音尚未下载，可点击下载或重试。');
   byId('download-voice').hidden = !voice?.available || voice.cached;
   byId('voiceVolume').value = Math.round(state.voiceVolume * 100);
   byId('voiceVolume-value').textContent = `${Math.round(state.voiceVolume * 100)}%`;
   updateVoicePreview();
+  updateReminderPreview();
   updateButtons();
   byId('pause').textContent = state.paused ? '恢复活动' : '暂停活动';
   byId('visibility').textContent = state.fullscreenSuspended ? (state.userHidden ? '恢复后显示桌宠' : '恢复后保持隐藏') : (state.userHidden ? '显示桌宠' : '隐藏桌宠');
@@ -197,6 +214,15 @@ function render(data) {
 }
 
 for (const key of booleanKeys) byId(key).addEventListener('change', event => bridge.settings({ [key]: event.target.checked }, selectedId));
+byId('reminderTime').addEventListener('change', event => {
+  const time = event.target.value;
+  if (/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) bridge.settings({ reminderTime: time }, selectedId);
+  else event.target.value = currentData?.pets.find(pet => pet.id === selectedId)?.reminderTime || '09:00';
+});
+byId('reminderClip').addEventListener('change', event => {
+  if (event.target.value) bridge.settings({ reminderClipId: event.target.value }, selectedId);
+  updateReminderPreview();
+});
 for (const key of ['scale', 'speed']) {
   byId(key).addEventListener('input', event => { byId(`${key}-value`).textContent = key === 'scale' ? `${event.target.value}%` : event.target.value; });
   byId(key).addEventListener('change', event => bridge.settings({ [key]: Number(event.target.value) / (key === 'scale' ? 100 : 1) }, selectedId));

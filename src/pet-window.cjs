@@ -4,17 +4,22 @@ const { findModel } = require('./models.cjs');
 const { clamp, stepPhysics } = require('./physics.cjs');
 const { VoiceCaption } = require('./voice-caption.cjs');
 
-const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 30, voiceEnabled: false, idleVoiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
+const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 30, voiceEnabled: false, idleVoiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, reminderEnabled: false, reminderTime: '09:00', reminderClipId: '034', wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
 const LABELS = { default: '恢复待机', interact: '交互动作', relax: '休息', sit: '坐下', sleep: '睡眠', special: '特殊动作' };
 const IDLE_SLEEP_DELAY = 10 * 60 * 1000;
 const exists = win => win && !win.isDestroyed();
 const number = (value, fallback, min, max) => typeof value === 'number' && Number.isFinite(value) ? clamp(value, min, max) : fallback;
+const validReminderTime = value => typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+const reminderClipId = value => typeof value === 'string' && /^\d{3}$/.test(value) ? value : DEFAULTS.reminderClipId;
 
 class PetWindow {
   constructor(host, saved) {
     this.host = host; this.id = saved.id; this.model = findModel(saved.modelId);
     this.settings = { ...DEFAULTS, scale: number(saved.scale, DEFAULTS.scale, 0.5, 1.5), speed: number(saved.speed, 40, 15, 90), frameRate: [15, 24, 30, 45, 60].includes(saved.frameRate) ? saved.frameRate : DEFAULTS.frameRate, voiceVolume: number(saved.voiceVolume, 0.6, 0, 1) };
     for (const key of Object.keys(DEFAULTS)) if (typeof DEFAULTS[key] === 'boolean' && typeof saved[key] === 'boolean') this.settings[key] = saved[key];
+    this.settings.reminderTime = validReminderTime(saved.reminderTime) ? saved.reminderTime : DEFAULTS.reminderTime;
+    this.settings.reminderClipId = reminderClipId(saved.reminderClipId);
+    this.lastReminderKey = typeof saved.lastReminderKey === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(saved.lastReminderKey) ? saved.lastReminderKey : '';
     this.settings.form = this.model.forms.find(form => form.id === saved.form)?.id || this.model.forms[0].id;
     this.geometry = { footX: 210 * this.settings.scale, footY: 366 * this.settings.scale, halfWidth: 55 * this.settings.scale,
       visualLeft: 0, visualRight: 420 * this.settings.scale };
@@ -67,7 +72,7 @@ class PetWindow {
   noteActivity() { this.sleepAt = Date.now() + IDLE_SLEEP_DELAY; }
   send(channel, data) { if (exists(this.win)) this.win.webContents.send(channel, data); }
   form() { return this.model.forms.find(form => form.id === this.settings.form); }
-  serialise() { return { id: this.id, modelId: this.model.id, ...this.settings, x: Math.round(this.body.x), y: Math.round(this.body.y) }; }
+  serialise() { return { id: this.id, modelId: this.model.id, ...this.settings, lastReminderKey: this.lastReminderKey, x: Math.round(this.body.x), y: Math.round(this.body.y) }; }
   state(includeVoice = true) {
     const state = { ...this.serialise(), model: this.model, ready: this.ready, error: this.error, paused: this.paused,
       visible: exists(this.win) && this.win.isVisible(), supportedActions: this.supported, pose: this.pose,
@@ -147,6 +152,8 @@ class PetWindow {
     if ('speed' in patch) this.settings.speed = number(patch.speed, previous.speed, 15, 90);
     if ([15, 24, 30, 45, 60].includes(patch.frameRate)) this.settings.frameRate = patch.frameRate;
     if ('voiceVolume' in patch) this.settings.voiceVolume = number(patch.voiceVolume, previous.voiceVolume, 0, 1);
+    if (validReminderTime(patch.reminderTime)) this.settings.reminderTime = patch.reminderTime;
+    if (typeof patch.reminderClipId === 'string') this.settings.reminderClipId = reminderClipId(patch.reminderClipId);
     if (Object.keys(DEFAULTS).every(key => previous[key] === this.settings[key])) return;
     this.noteActivity();
     if (this.settings.alwaysOnTop !== previous.alwaysOnTop) this.win.setAlwaysOnTop(this.settings.alwaysOnTop, 'floating');
@@ -262,6 +269,16 @@ class PetWindow {
     const clip = choices[Math.floor(Math.random() * choices.length)];
     this.lastClickVoice = clip.id;
     this.send('pet:voice-play', clip.id);
+  }
+  remind(key) {
+    if (!this.settings.reminderEnabled || this.lastReminderKey === key || !this.ready || this.error || this.userHidden || this.fullscreenSuspended || this.dragging || !exists(this.win) || !this.win.isVisible()) return;
+    this.lastReminderKey = key;
+    this.host.save();
+    this.stopVoice();
+    if (!this.paused && this.supported.includes('interact')) this.act('interact', false, false);
+    const voice = this.host.voices.state(this.model.id);
+    const clip = this.settings.voiceEnabled && voice.cached ? voice.clips.find(item => item.id === this.settings.reminderClipId) || voice.clips[0] : null;
+    this.send('pet:reminder', { text: clip?.text || '', clipId: clip?.id || null });
   }
   stopVoice() { this.caption.close(); this.send('pet:voice-stop'); }
   showVoiceCaption(data) {

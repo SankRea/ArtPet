@@ -18,7 +18,7 @@ const { AiChatWindows } = require('./ai-chat-window.cjs');
 const ROOT = path.join(__dirname, '..');
 const AUTO_START_NAME = 'ArkPet Surtr';
 const pets = new Map(), petsByWebContents = new Map(), petTrays = new Map();
-let launcher, launcherTray, selectedId, settingsPath, saveTimer, loopTimer, changeTimer, trayIcon, fullscreenTimer;
+let launcher, launcherTray, selectedId, settingsPath, saveTimer, loopTimer, changeTimer, trayIcon, fullscreenTimer, reminderTimer;
 let surfaces, quitting = false, lastTick = Date.now(), shortcutStatus = {};
 let library, voices, downloads, modelOperation = null, maxPets = 1, proxyUrl = '';
 let aiSettings, profiles, aiClient, aiChats;
@@ -109,6 +109,13 @@ function checkFullscreen() {
     for (const pet of pets.values()) pet.setFullscreenSuspended(detected);
     changed();
   } else if (previousError !== surfaces.fullscreenError) notifyLauncher();
+}
+function checkReminders() {
+  if (quitting) return;
+  const now = new Date();
+  const time = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+  const day = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+  for (const pet of pets.values()) if (pet.settings.reminderTime === time) pet.remind(day + ' ' + time);
 }
 function saveNow() {
   clearTimeout(saveTimer);
@@ -515,6 +522,7 @@ else {
     const modelArg = process.argv.find(arg => arg.startsWith('--model='))?.slice(8);
     for (const item of saved) addPet(item.modelId, item);
     if (!pets.size) addPet(DEFAULT_MODEL_ID);
+    reminderTimer = setInterval(checkReminders, 1000);
     if (!modelArg && pets.has(previousSelection)) selectedId = previousSelection;
     if (!process.argv.includes('--standalone') && !fullscreenActive) openLauncher();
     if (modelArg) selectModel({ mode: 'replace', modelId: modelArg, id: selectedId }).then(result => { if (!result.ok && !quitting) dialog.showErrorBox('无法选择干员', result.error); });
@@ -536,7 +544,7 @@ else {
     for (const pet of pets.values()) pet.changed();
   }).catch(error => { dialog.showErrorBox('ArkPet 启动失败', error.message); app.quit(); });
   app.on('before-quit', () => {
-    quitting = true; modelOperation?.controller.abort(); aiChats?.closeAll(); clearTimeout(loopTimer); clearTimeout(changeTimer); clearInterval(fullscreenTimer); saveNow(); globalShortcut.unregisterAll();
+    quitting = true; modelOperation?.controller.abort(); aiChats?.closeAll(); clearTimeout(loopTimer); clearTimeout(changeTimer); clearInterval(fullscreenTimer); clearInterval(reminderTimer); saveNow(); globalShortcut.unregisterAll();
     launcherTray?.destroy(); for (const tray of petTrays.values()) tray.destroy(); petTrays.clear();
   });
   app.on('window-all-closed', () => app.quit());

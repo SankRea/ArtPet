@@ -9,9 +9,11 @@ let prefs = { paused: false, visible: true, wander: true }, pose = 'default', dr
 let actionMap = {}, actionVariants = {}, animationBottoms = new Map(), idleBounds, currentAnimation, displayReady = false, animated = false, hitElapsed = 0, lastHitSignature = '', lastPetRect = '';
 const voicePlayer = new window.ArkPetVoice(data => bridge.voiceCaption(data), (modelId, message) => bridge.voiceError(modelId, message));
 
-function say(text, duration = 3200) {
+function say(text, duration = 3200, reminder = false) {
   clearTimeout(bubbleTimer);
+  bubble.classList.toggle('reminder', reminder);
   bubble.textContent = text; bubble.hidden = false;
+  bubble.style.top = Math.max(66, bubble.offsetHeight + 8, (Number.parseFloat(hit.style.top) || 0) - 12) + 'px';
   bubbleTimer = setTimeout(() => { bubble.hidden = true; }, duration);
 }
 
@@ -112,7 +114,7 @@ function updateHitArea() {
       lastPetRect = petRect;
       Object.assign(hit.style, { left: `${left}px`, top: `${top}px`, width: `${Math.max(0, right - left)}px`, height: `${Math.max(0, bottom - top)}px` });
       bubble.style.left = `${innerWidth / 2}px`;
-      bubble.style.top = `${Math.max(66, top - 12)}px`;
+      bubble.style.top = Math.max(66, bubble.offsetHeight + 8, top - 12) + 'px';
     }
     rectangles.push({ x: left, y: top, width: right - left, height: bottom - top });
   }
@@ -170,6 +172,11 @@ bridge.onDragEnd(({ moved, cancelled }) => {
 bridge.onAction(applyAction);
 bridge.onVoice(clipId => voicePlayer.play(clipId));
 bridge.onVoiceStop(() => { voicePlayer.stop(true); clearTimeout(bubbleTimer); bubble.hidden = true; });
+bridge.onReminder(({ text, clipId }) => {
+  if (!prefs.visible || prefs.fullscreenSuspended) return;
+  if (clipId && voicePlayer.allowed()) voicePlayer.play(clipId);
+  else if (text) say(text, 12000, true);
+});
 bridge.onForm(id => { try { configureForm(id); } catch (error) { showError(error); } });
 bridge.onMotion(({ walking, direction: nextDirection }) => {
   if (!pet) return;
@@ -180,7 +187,7 @@ bridge.onMotion(({ walking, direction: nextDirection }) => {
 function applyState(value) {
   prefs = value;
   voicePlayer.configure(value);
-  if (!value.voiceEnabled || !value.visible || value.paused || value.fullscreenSuspended) { clearTimeout(bubbleTimer); bubble.hidden = true; }
+  if (!value.visible || value.paused || value.fullscreenSuspended) { clearTimeout(bubbleTimer); bubble.hidden = true; }
   updatePlayback();
   updateHitArea();
 }

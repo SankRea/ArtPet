@@ -1,6 +1,6 @@
 {
     "repository":  "https://github.com/isHarryh/Ark-Models",
-    "commit":  "3745e5c6e10b5252b2a5e1f1841ebef62b7ef15b",
+    "commit":  "f39eca699dc9e05923862af45c3f1aee9aab8f81",
     "entries":  [
                     {
                         "id":  "285_medic2",
@@ -22,6 +22,17 @@
                                       ".atlas":  "build_char_286_cast3.atlas",
                                       ".png":  "build_char_286_cast3.png",
                                       ".skel":  "build_char_286_cast3.skel"
+                                  }
+                    },
+                    {
+                        "id":  "4220_kormr",
+                        "name":  "虎狼丸",
+                        "appellation":  "Koromaru",
+                        "outfit":  "默认服装",
+                        "files":  {
+                                      ".atlas":  "build_char_4220_kormr.atlas",
+                                      ".png":  "build_char_4220_kormr.png",
+                                      ".skel":  "build_char_4220_kormr.skel"
                                   }
                     },
                     {
@@ -1730,6 +1741,17 @@
                                   }
                     },
                     {
+                        "id":  "4218_aigis",
+                        "name":  "埃癸斯",
+                        "appellation":  "Aegis",
+                        "outfit":  "默认服装",
+                        "files":  {
+                                      ".atlas":  "build_char_4218_aigis.atlas",
+                                      ".png":  "build_char_4218_aigis.png",
+                                      ".skel":  "build_char_4218_aigis.skel"
+                                  }
+                    },
+                    {
                         "id":  "002_amiya",
                         "name":  "阿米娅",
                         "appellation":  "Amiya",
@@ -2929,6 +2951,17 @@
                                   }
                     },
                     {
+                        "id":  "4219_yukari",
+                        "name":  "岳羽由加莉",
+                        "appellation":  "Yukari Takeba",
+                        "outfit":  "默认服装",
+                        "files":  {
+                                      ".atlas":  "build_char_4219_yukari.atlas",
+                                      ".png":  "build_char_4219_yukari.png",
+                                      ".skel":  "build_char_4219_yukari.skel"
+                                  }
+                    },
+                    {
                         "id":  "4234_pedro",
                         "name":  "佩德洛",
                         "appellation":  "Pedro",
@@ -3938,6 +3971,17 @@
                                       ".atlas":  "build_char_1023_ghost2.atlas",
                                       ".png":  "build_char_1023_ghost2.png",
                                       ".skel":  "build_char_1023_ghost2.skel"
+                                  }
+                    },
+                    {
+                        "id":  "4217_makoto",
+                        "name":  "结城理",
+                        "appellation":  "Makoto Yuki",
+                        "outfit":  "默认服装",
+                        "files":  {
+                                      ".atlas":  "build_char_4217_makoto.atlas",
+                                      ".png":  "build_char_4217_makoto.png",
+                                      ".skel":  "build_char_4217_makoto.skel"
                                   }
                     },
                     {
@@ -4972,6 +5016,17 @@
                                       ".atlas":  "build_char_281_popka_sale#18.atlas",
                                       ".png":  "build_char_281_popka_sale#18.png",
                                       ".skel":  "build_char_281_popka_sale#18.skel"
+                                  }
+                    },
+                    {
+                        "id":  "4199_makiri_sale#19",
+                        "name":  "松桐",
+                        "appellation":  "Matsukiri",
+                        "outfit":  "忒斯特收藏/XXI",
+                        "files":  {
+                                      ".atlas":  "build_char_4199_makiri_sale#19.atlas",
+                                      ".png":  "build_char_4199_makiri_sale#19.png",
+                                      ".skel":  "build_char_4199_makiri_sale#19.skel"
                                   }
                     },
                     {
@@ -6149,6 +6204,17 @@
                                       ".atlas":  "build_char_478_kirara_epoque#57.atlas",
                                       ".png":  "build_char_478_kirara_epoque#57.png",
                                       ".skel":  "build_char_478_kirara_epoque#57.skel"
+                                  }
+                    },
+                    {
+                        "id":  "4015_spuria_epoque#58",
+                        "name":  "空构",
+                        "appellation":  "Spuria",
+                        "outfit":  "时代/LVIII",
+                        "files":  {
+                                      ".atlas":  "build_char_4015_spuria_epoque#58.atlas",
+                                      ".png":  "build_char_4015_spuria_epoque#58.png",
+                                      ".skel":  "build_char_4015_spuria_epoque#58.skel"
                                   }
                     },
                     {
@@ -7340,6 +7406,17 @@
                                   }
                     },
                     {
+                        "id":  "4051_akkord_summer#23",
+                        "name":  "协律",
+                        "appellation":  "Akkord",
+                        "outfit":  "珊瑚海岸/XXIII",
+                        "files":  {
+                                      ".atlas":  "build_char_4051_akkord_summer#23.atlas",
+                                      ".png":  "build_char_4051_akkord_summer#23.png",
+                                      ".skel":  "build_char_4051_akkord_summer#23.skel"
+                                  }
+                    },
+                    {
                         "id":  "241_panda_marthe#1",
                         "name":  "食铁兽",
                         "appellation":  "FEater",
@@ -8294,6 +8371,17 @@
                                       ".atlas":  "build_char_336_folivo_wild#11.atlas",
                                       ".png":  "build_char_336_folivo_wild#11.png",
                                       ".skel":  "build_char_336_folivo_wild#11.skel"
+                                  }
+                    },
+                    {
+                        "id":  "1027_greyy2_wild#12",
+                        "name":  "承曦格雷伊",
+                        "appellation":  "Greyy the Lightningbearer",
+                        "outfit":  "生命之地/XII",
+                        "files":  {
+                                      ".atlas":  "build_char_1027_greyy2_wild#12.atlas",
+                                      ".png":  "build_char_1027_greyy2_wild#12.png",
+                                      ".skel":  "build_char_1027_greyy2_wild#12.skel"
                                   }
                     },
                     {
@@ -9848,6 +9936,28 @@
                                   }
                     },
                     {
+                        "id":  "4165_ctrail_yun#11",
+                        "name":  "云迹",
+                        "appellation":  "Contrail",
+                        "outfit":  "0011/韵系列/XI",
+                        "files":  {
+                                      ".atlas":  "build_char_4165_ctrail_yun#11.atlas",
+                                      ".png":  "build_char_4165_ctrail_yun#11.png",
+                                      ".skel":  "build_char_4165_ctrail_yun#11.skel"
+                                  }
+                    },
+                    {
+                        "id":  "4196_reckpr_yun#12",
+                        "name":  "录武官",
+                        "appellation":  "Record Keeper",
+                        "outfit":  "0011/韵系列/XII",
+                        "files":  {
+                                      ".atlas":  "build_char_4196_reckpr_yun#12.atlas",
+                                      ".png":  "build_char_4196_reckpr_yun#12.png",
+                                      ".skel":  "build_char_4196_reckpr_yun#12.skel"
+                                  }
+                    },
+                    {
                         "id":  "1028_texas2_iteration#1",
                         "name":  "缄默德克萨斯",
                         "appellation":  "Texas the Omertosa",
@@ -10285,6 +10395,50 @@
                                       ".atlas":  "build_char_423_blemsh_littlePony#1.atlas",
                                       ".png":  "build_char_423_blemsh_littlePony#1.png",
                                       ".skel":  "build_char_423_blemsh_littlePony#1.skel"
+                                  }
+                    },
+                    {
+                        "id":  "4217_makoto_p3r#1",
+                        "name":  "结城理",
+                        "appellation":  "Makoto Yuki",
+                        "outfit":  "女神异闻录３ Reload",
+                        "files":  {
+                                      ".atlas":  "build_char_4217_makoto_p3r#1.atlas",
+                                      ".png":  "build_char_4217_makoto_p3r#1.png",
+                                      ".skel":  "build_char_4217_makoto_p3r#1.skel"
+                                  }
+                    },
+                    {
+                        "id":  "4218_aigis_p3r#1",
+                        "name":  "埃癸斯",
+                        "appellation":  "Aegis",
+                        "outfit":  "女神异闻录３ Reload",
+                        "files":  {
+                                      ".atlas":  "build_char_4218_aigis_p3r#1.atlas",
+                                      ".png":  "build_char_4218_aigis_p3r#1.png",
+                                      ".skel":  "build_char_4218_aigis_p3r#1.skel"
+                                  }
+                    },
+                    {
+                        "id":  "4219_yukari_p3r#1",
+                        "name":  "岳羽由加莉",
+                        "appellation":  "Yukari Takeba",
+                        "outfit":  "女神异闻录３ Reload",
+                        "files":  {
+                                      ".atlas":  "build_char_4219_yukari_p3r#1.atlas",
+                                      ".png":  "build_char_4219_yukari_p3r#1.png",
+                                      ".skel":  "build_char_4219_yukari_p3r#1.skel"
+                                  }
+                    },
+                    {
+                        "id":  "4220_kormr_p3r#1",
+                        "name":  "虎狼丸",
+                        "appellation":  "Koromaru",
+                        "outfit":  "女神异闻录３ Reload",
+                        "files":  {
+                                      ".atlas":  "build_char_4220_kormr_p3r#1.atlas",
+                                      ".png":  "build_char_4220_kormr_p3r#1.png",
+                                      ".skel":  "build_char_4220_kormr_p3r#1.skel"
                                   }
                     },
                     {

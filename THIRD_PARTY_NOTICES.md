@@ -19,7 +19,7 @@
 
 ### 软件组件
 
-`assets/operators.json` 的干员与时装目录来自 [isHarryh/Ark-Models](https://github.com/isHarryh/Ark-Models) 提交 `f39eca699dc9e05923862af45c3f1aee9aab8f81` 的 `models_data.json`。用户选中其他干员后，程序从该仓库的 `models/` 目录按需下载对应模型，其版权归属和使用限制与内置素材相同。下载来源、上游提交与文件校验值保存在本地模型缓存的 `source.json` 中。
+`assets/operators.json` 的干员与时装目录来自 [isHarryh/Ark-Models](https://github.com/isHarryh/Ark-Models) 提交 `f39eca699dc9e05923862af45c3f1aee9aab8f81` 的 `models_data.json`。用户可在“干员管理”中手动检查并拉取该仓库的最新目录，更新目录及提交保存在用户数据目录的 `model-catalog.json` 中。用户选中其他干员后，程序从该仓库的 `models/` 目录按对应提交下载模型，已缓存模型继续使用下载时的提交，其版权归属和使用限制与内置素材相同。下载来源、上游提交与文件校验值保存在本地模型缓存的 `source.json` 中。
 
 - [Electron](https://github.com/electron/electron)：MIT；其发行包另附 Chromium 等组件声明。
 - [PixiJS](https://github.com/pixijs/pixijs)：MIT。

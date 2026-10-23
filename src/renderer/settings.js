@@ -65,6 +65,8 @@ function updateButtons() {
   byId('replace-pet').disabled = busy || !model || !pet || model.id === pet.model.id;
   byId('replace-pet').textContent = model && !model.cached ? '下载并更换当前干员' : '更换当前干员';
   byId('add-pet').textContent = model && !model.cached ? '下载并添加' : '添加桌宠';
+  byId('check-catalog-update').disabled = busy;
+  byId('pull-catalog-update').disabled = busy || !currentData.catalogUpdate?.available;
   byId('save-limit').disabled = busy;
   byId('max-pets').disabled = busy;
   byId('save-proxy').disabled = busy;
@@ -113,6 +115,7 @@ async function request(work, success) {
 }
 function renderOperation(operation) {
   byId('download-panel').hidden = !operation;
+  byId('cancel-download').textContent = operation?.mode.startsWith('catalog-') ? '取消操作' : '取消下载';
   if (operation) {
     const progress = operation.progress;
     byId('download-progress').value = progress ? Math.min(1, (progress.index + (progress.expected ? progress.received / progress.expected : 0)) / progress.total) : 0;
@@ -140,6 +143,14 @@ function render(data) {
   if (document.activeElement !== byId('proxy-address')) byId('proxy-address').value = data.proxyAddress || '';
   if (document.activeElement !== byId('proxy-port')) byId('proxy-port').value = data.proxyPort || '';
   renderAi(data.ai);
+  const catalogUpdate = data.catalogUpdate;
+  if (catalogUpdate) {
+    const version = catalogUpdate.commit.slice(0, 7);
+    const status = catalogUpdate.available ? `发现新版本 ${catalogUpdate.latestCommit.slice(0, 7)}，可拉取更新。`
+      : catalogUpdate.checkedAt ? '模型目录已是最新版本。' : '点击“检查更新”获取上游最新版本。';
+    const checked = catalogUpdate.checkedAt ? ` · 上次检查：${new Date(catalogUpdate.checkedAt).toLocaleString('zh-CN')}` : '';
+    byId('catalog-update-status').textContent = `当前目录 ${version} · ${catalogUpdate.error || status}${checked}`;
+  }
   const autoStart = data.autoStart || { available: false, enabled: false, registered: false, error: '无法读取开机自动启动状态。' };
   byId('autoStart').checked = autoStart.enabled;
   byId('auto-start-status').textContent = autoStart.error || (autoStart.enabled
@@ -244,6 +255,13 @@ byId('model-search').addEventListener('input', () => { clearTimeout(searchTimer)
 byId('model-select').addEventListener('change', updateButtons);
 byId('add-pet').addEventListener('click', () => request(() => bridge.addPet(byId('model-select').value), '已添加桌宠。'));
 byId('replace-pet').addEventListener('click', () => request(() => bridge.replacePet(byId('model-select').value, selectedId), '已切换干员。'));
+for (const [id, action] of [['check-catalog-update', 'check'], ['pull-catalog-update', 'pull']]) {
+  byId(id).addEventListener('click', () => request(async () => {
+    const result = await bridge.updateModelCatalog(action);
+    if (result.state) render(result.state);
+    return result;
+  }, '模型目录操作已完成。'));
+}
 byId('save-limit').addEventListener('click', () => request(() => bridge.setMaxPets(Number(byId('max-pets').value)), '桌宠数量上限已保存。'));
 byId('autoStart').addEventListener('change', event => {
   const enabled = event.target.checked;
@@ -305,7 +323,7 @@ byId('clear-ai-key').addEventListener('click', () => {
     return result;
   }, 'API Key 已清除，AI 对话已停用。');
 });
-byId('cancel-download').addEventListener('click', () => { bridge.cancelDownload(); byId('operation-message').textContent = '正在取消下载…'; });
+byId('cancel-download').addEventListener('click', () => { bridge.cancelDownload(); byId('operation-message').textContent = '正在取消操作…'; });
 byId('detach').addEventListener('click', () => bridge.detach());
 byId('quit-all').addEventListener('click', () => bridge.command('quit-all'));
 for (const tab of document.querySelectorAll('[data-settings-tab]')) {

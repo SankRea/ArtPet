@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('arkpet', {
   command: (command, id) => ipcRenderer.send('pet:command', { command, id }),
   addPet: modelId => ipcRenderer.invoke('launcher:model', { mode: 'add', modelId }),
   replacePet: (modelId, id) => ipcRenderer.invoke('launcher:model', { mode: 'replace', modelId, id }),
+  updateModelCatalog: action => ipcRenderer.invoke('launcher:catalog-update', action),
   setMaxPets: value => ipcRenderer.invoke('launcher:limit', value),
   setProxy: (address, port) => ipcRenderer.invoke('launcher:proxy', { address, port }),
   setAi: value => ipcRenderer.invoke('launcher:ai-settings', value),

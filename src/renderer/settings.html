@@ -104,11 +104,13 @@
     <div id="operator-panel" class="page-panel" role="tabpanel" data-settings-panel="operator" hidden>
       <section class="card" aria-labelledby="operator-heading">
         <div class="card-heading"><div><h2 id="operator-heading">选择干员与时装</h2><p>搜索、下载、添加或替换当前桌宠。</p></div></div>
+        <div class="utility-bar"><button id="check-catalog-update" type="button">检查更新</button><button id="pull-catalog-update" type="button" disabled>拉取更新</button></div>
+        <p id="catalog-update-status" class="inline-note" role="status">正在读取模型目录版本…</p>
         <input id="model-search" type="search" aria-label="搜索干员和时装" placeholder="搜索干员、英文名或时装系列">
         <select id="model-select" aria-label="选择干员或时装"></select>
         <p id="catalog-info" class="inline-note"></p>
         <div class="utility-bar"><button id="replace-pet" type="button">更换当前干员</button><button id="add-pet" class="primary" type="button">添加桌宠</button></div>
-        <p class="inline-note">模型来自 Ark-Models；对应语音与文字从 PRTS Wiki 的同一条记录下载。已缓存的资源可离线使用。</p>
+        <p class="inline-note">模型来自 Ark-Models，可手动检查并拉取目录更新；模型文件按选择下载，已下载模型继续复用。对应语音与文字从 PRTS Wiki 的同一条记录下载。已缓存的资源可离线使用。</p>
       </section>
     </div>
 

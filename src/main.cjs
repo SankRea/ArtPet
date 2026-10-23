@@ -55,7 +55,7 @@ function operationState() {
   return modelOperation ? { mode: modelOperation.mode, modelId: modelOperation.modelId, name: modelOperation.name, progress: modelOperation.progress } : null;
 }
 function launcherState(includeCatalog = true) {
-  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state(pet.id === selectedId)), maxPets, ...splitProxy(proxyUrl), ai: aiSettings?.state() || {}, autoStart: autoStartState(), storage: { directory: dataDirectory, mode: storageMode }, operation: operationState(), ...globalState() };
+  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state(pet.id === selectedId)), maxPets, ...splitProxy(proxyUrl), ai: aiSettings?.state() || {}, autoStart: autoStartState(), storage: { directory: dataDirectory, mode: storageMode }, catalogUpdate: library.updateState(), operation: operationState(), ...globalState() };
   if (includeCatalog) { state.models = library.list(); launcherCatalogRevision = library.revision; }
   return state;
 }
@@ -237,6 +237,24 @@ async function downloadVoice(id) {
     if (!quitting) { for (const current of pets.values()) current.changed(); changed(); }
   }
 }
+async function updateModelCatalog(action) {
+  if (!['check', 'pull'].includes(action)) return { ok: false, error: '目录更新请求无效。' };
+  if (modelOperation) return { ok: false, error: '正在处理其他资源，请等待完成或取消。' };
+  const controller = new AbortController();
+  modelOperation = { mode: `catalog-${action}`, name: action === 'check' ? '检查模型目录更新' : '拉取模型目录更新', controller, progress: null };
+  changed();
+  let result;
+  try {
+    const message = action === 'check' ? await library.checkForUpdates(downloadProgress, controller.signal) : await library.pullUpdates(downloadProgress, controller.signal);
+    result = { ok: true, warning: message };
+  } catch (error) {
+    const message = controller.signal.aborted ? '目录更新操作已取消。' : `模型目录更新失败：${error.message}`;
+    if (!controller.signal.aborted) library.catalogError = message;
+    result = { ok: false, error: message };
+  } finally { modelOperation = null; if (!quitting) changed(); }
+  if (!quitting) notifyLauncher();
+  return { ...result, state: launcherState() };
+}
 async function selectModel({ mode, modelId, id }) {
   if (modelOperation) return { ok: false, error: '正在下载或更换干员，请等待完成或取消。' };
   const model = findModel(modelId);
@@ -410,6 +428,7 @@ function registerIpc() {
     if (Object.hasOwn(commands, command)) commands[command]();
   });
   ipcMain.handle('launcher:model', (event, request) => trusted(event) && event.sender === launcher?.webContents && request ? selectModel(request) : { ok: false, error: '请求无效。' });
+  ipcMain.handle('launcher:catalog-update', (event, action) => trusted(event) && event.sender === launcher?.webContents ? updateModelCatalog(action) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:limit', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateLimit(value) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:proxy', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateProxy(value) : { ok: false, error: '请求无效。' });
   ipcMain.handle('launcher:ai-settings', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateAi(value) : { ok: false, error: '请求无效。' });
@@ -507,9 +526,11 @@ else {
   });
   app.whenReady().then(async () => {
     prepareDataDirectory();
-    const saved = load(), previousSelection = selectedId;
     downloads = new DownloadClient(() => proxyUrl);
-    library = new ModelLibrary(dataDirectory, downloads); voices = new VoiceLibrary(dataDirectory, downloads);
+    library = new ModelLibrary(dataDirectory, downloads);
+    // 先恢复更新后的目录，才能识别上次保存的新增干员。
+    const saved = load(), previousSelection = selectedId;
+    voices = new VoiceLibrary(dataDirectory, downloads);
     profiles = new PrtsProfileSource(dataDirectory, downloads);
     aiSettings = new AiSettingsStore(dataDirectory); await aiSettings.load();
     aiClient = new AiClient(aiSettings, profiles, voices);

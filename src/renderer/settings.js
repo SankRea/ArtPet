@@ -176,6 +176,7 @@ function render(data) {
   if (!state) { voicePreviewKey = ''; byId('status').textContent = '未添加桌宠'; return; }
   byId('pet-select').value = state.id;
   for (const key of booleanKeys) byId(key).checked = state[key];
+  byId('reminder-controls').hidden = !state.reminderEnabled;
   if (document.activeElement !== byId('reminderTime')) byId('reminderTime').value = state.reminderTime;
   byId('wander').disabled = state.manualMode;
   byId('autoActions').disabled = state.manualMode;
@@ -225,6 +226,7 @@ function render(data) {
 }
 
 for (const key of booleanKeys) byId(key).addEventListener('change', event => bridge.settings({ [key]: event.target.checked }, selectedId));
+byId('reminderEnabled').addEventListener('change', event => { byId('reminder-controls').hidden = !event.target.checked; });
 byId('reminderTime').addEventListener('change', event => {
   const time = event.target.value;
   if (/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) bridge.settings({ reminderTime: time }, selectedId);

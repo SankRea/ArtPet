@@ -24,6 +24,7 @@ class VoiceCaption {
     });
     const win = this.win;
     pet.host.secureWindow(win);
+    pet.host.surfaces.excludeFromPeek(win);
     win.setIgnoreMouseEvents(true);
     win.webContents.once('did-finish-load', () => {
       if (this.win !== win) return;

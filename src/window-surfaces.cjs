@@ -1,6 +1,6 @@
 const IGNORED_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd']);
 
-// Read only window geometry. Never inspect titles, contents, or control another app.
+// Only inspect other apps' geometry; native attributes affect ArkPet windows only.
 class WindowSurfaces {
   constructor(screen) {
     this.screen = screen;
@@ -9,6 +9,7 @@ class WindowSurfaces {
     this.available = false;
     this.error = '';
     this.fullscreenError = '';
+    this.fullscreenCandidate = null; this.fullscreenCandidateSince = 0;
     if (process.platform !== 'win32') { this.error = '窗口上沿检测仅支持 Windows'; return; }
     try {
       const koffi = require('koffi');
@@ -24,6 +25,7 @@ class WindowSurfaces {
       this.className = user32.func('int __stdcall GetClassNameW(void *hwnd, _Out_ char16_t *name, int length)');
       this.rect = user32.func('int __stdcall GetWindowRect(void *hwnd, _Out_ ArkPetRECT *rect)');
       this.attribute = dwm.func('int32 __stdcall DwmGetWindowAttribute(void *hwnd, uint32 attribute, void *value, uint32 size)');
+      this.setAttribute = dwm.func('int32 __stdcall DwmSetWindowAttribute(void *hwnd, uint32 attribute, const void *value, uint32 size)');
       this.callbackType = callback; // Keep callback metadata alive for the native binding.
       this.scratch = { cloaked: Buffer.alloc(4), name: Buffer.alloc(512), raw: Buffer.alloc(16), processId: [0] };
       this.foreground = user32.func('void * __stdcall GetForegroundWindow()');
@@ -36,7 +38,32 @@ class WindowSurfaces {
     } catch (error) { this.error = `窗口检测不可用：${error.message}`; }
   }
 
+  excludeFromPeek(win) {
+    if (!this.available || win.isDestroyed()) return;
+    try {
+      const handle = win.getNativeWindowHandle();
+      if (handle.length !== 4 && handle.length !== 8) throw new Error('窗口句柄长度无效');
+      const hwnd = handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE());
+      const enabled = Buffer.alloc(4); enabled.writeInt32LE(1);
+      // Keep ArkPet and its captions visible while Windows previews another window.
+      const result = this.setAttribute(hwnd, 12, enabled, 4); // DWMWA_EXCLUDED_FROM_PEEK, BOOL
+      if (result !== 0) throw new Error(`DwmSetWindowAttribute 返回 0x${(result >>> 0).toString(16)}`);
+    } catch (error) { console.warn(`无法排除任务栏预览隐藏：${error.message}`); }
+  }
+
   isForegroundFullscreen() {
+    const hwnd = this.fullscreenWindow();
+    if (!hwnd) { this.fullscreenCandidate = null; return hwnd; }
+    const now = Date.now();
+    if (this.fullscreenCandidate !== hwnd) {
+      this.fullscreenCandidate = hwnd; this.fullscreenCandidateSince = now;
+      return null;
+    }
+    // Window switching can briefly expose fullscreen-sized helper windows.
+    return now - this.fullscreenCandidateSince >= 300 ? true : null;
+  }
+
+  fullscreenWindow() {
     if (!this.available) return null;
     try {
       this.fullscreenError = '';
@@ -50,6 +77,11 @@ class WindowSurfaces {
       if (this.attribute(hwnd, 14, cloaked, 4) === 0 && cloaked.readUInt32LE() !== 0) return false;
       const length = this.className(hwnd, name, 256);
       if (IGNORED_CLASSES.has(name.toString('utf16le', 0, Math.max(0, length) * 2))) return false;
+      // Framed/child windows and non-activating tools are not fullscreen apps,
+      // even when custom title bars or an auto-hidden taskbar fill the monitor.
+      const style = this.style(hwnd, -16), exStyle = this.style(hwnd, -20);
+      if (style & (0x00c00000 | 0x00040000 | 0x40000000)) return false; // WS_CAPTION, WS_THICKFRAME, WS_CHILD
+      if (exStyle & (0x80 | 0x08000000)) return false; // WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE
       const monitor = this.monitorFromWindow(hwnd, 2); // MONITOR_DEFAULTTONEAREST
       const scratch = this.fullscreenScratch;
       scratch.monitor.writeUInt32LE(40, 0); // sizeof(MONITORINFO)
@@ -59,9 +91,12 @@ class WindowSurfaces {
       const width = scratch.client.readInt32LE(8), height = scratch.client.readInt32LE(12);
       const left = scratch.monitor.readInt32LE(4), top = scratch.monitor.readInt32LE(8);
       const right = scratch.monitor.readInt32LE(12), bottom = scratch.monitor.readInt32LE(16);
-      // Compare client area to the full physical monitor, not the desktop work area.
-      // A normal maximized window's title bar/taskbar leaves part of this area uncovered.
-      return width > 0 && height > 0 && x <= left + 2 && y <= top + 2 && x + width >= right - 2 && y + height >= bottom - 2;
+      // Do not combine geometry read from a window that has already lost focus.
+      if (this.foreground() !== hwnd) return null;
+      // Match the monitor bounds, rather than accepting oversized windows that cover it.
+      const matches = width > 0 && height > 0 && Math.abs(x - left) <= 2 && Math.abs(y - top) <= 2
+        && Math.abs(x + width - right) <= 2 && Math.abs(y + height - bottom) <= 2;
+      return matches ? hwnd : false;
     } catch (error) {
       this.fullscreenError = `全屏检测暂时失败：${error.message}`;
       return null;

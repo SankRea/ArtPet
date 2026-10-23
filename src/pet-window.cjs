@@ -46,6 +46,7 @@ class PetWindow {
     });
     this.webContentsId = this.win.webContents.id;
     host.secureWindow(this.win);
+    host.surfaces.excludeFromPeek(this.win);
     const [initialX, initialY] = this.win.getPosition();
     this.position = { x: initialX, y: initialY };
     this.win.on('move', () => {

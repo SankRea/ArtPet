@@ -23,7 +23,7 @@ let surfaces, quitting = false, lastTick = Date.now(), shortcutStatus = {};
 let library, voices, downloads, modelOperation = null, maxPets = 1, proxyUrl = '';
 let aiSettings, profiles, aiClient, aiChats;
 let environment, loopRunning = false, nextSurfaceScan = 0, launcherCatalogRevision = -1, lastSavedText;
-let dataDirectory, storageMode = 'system';
+let dataDirectory, storageMode = 'system', lastClosedPet = null;
 let fullscreenActive = false;
 const exists = win => win && !win.isDestroyed();
 protocol.registerSchemesAsPrivileged([{ scheme: 'arkpet', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
@@ -121,7 +121,7 @@ function saveNow() {
   clearTimeout(saveTimer);
   if (!settingsPath) return '设置保存路径尚未准备好。';
   try {
-    const contents = JSON.stringify({ version: 4, maxPets, ...splitProxy(proxyUrl), selectedId, pets: [...pets.values()].map(pet => pet.serialise()) }, null, 2);
+    const contents = JSON.stringify({ version: 4, maxPets, ...splitProxy(proxyUrl), selectedId, lastClosedPet, pets: [...pets.values()].map(pet => pet.serialise()) }, null, 2);
     if (contents === lastSavedText) return '';
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(`${settingsPath}.tmp`, contents);
@@ -179,8 +179,11 @@ function load() {
   maxPets = Number.isInteger(limit) && limit >= 1 && limit <= 100 ? limit : 1;
   if ([2, 3, 4].includes(saved.version) && Array.isArray(saved.pets)) {
     selectedId = saved.selectedId;
-    return saved.pets.filter(item => item && typeof item === 'object' && findModel(item.modelId)).slice(0, maxPets)
+    const previousPet = saved.lastClosedPet;
+    lastClosedPet = previousPet && typeof previousPet === 'object' && findModel(previousPet.modelId) ? previousPet : null;
+    const savedPets = saved.pets.filter(item => item && typeof item === 'object' && findModel(item.modelId)).slice(0, maxPets)
       .map(item => saved.version < 4 && item.frameRate === 24 ? { ...item, frameRate: 30 } : item);
+    return savedPets.length ? savedPets : lastClosedPet ? [lastClosedPet] : [];
   }
   // Migrate the old default once, while preserving an explicitly changed size.
   return [{ ...saved, id: randomUUID(), modelId: DEFAULT_MODEL_ID, scale: !Number.isFinite(saved.scale) || saved.scale === 1 ? 0.75 : saved.scale }];
@@ -196,7 +199,7 @@ function secureWindow(win) {
   win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   win.webContents.session.setPermissionCheckHandler(() => false);
 }
-function addPet(modelId, saved = {}) {
+function addPet(modelId, saved = pets.size ? {} : lastClosedPet || {}) {
   if (pets.size >= maxPets || !findModel(modelId) || !library.isCached(modelId)) return;
   const id = typeof saved.id === 'string' && !pets.has(saved.id) ? saved.id : randomUUID();
   const pet = new PetWindow({ globalState, secureWindow, changed, save, surfaces, voices, downloadVoice,
@@ -331,6 +334,8 @@ function openAiChat(id) {
 }
 function closed(pet) {
   if (quitting) return;
+  // 关闭窗口只移除运行实例，保留配置供重新添加或下次启动恢复。
+  lastClosedPet = pet.serialise();
   aiChats?.closePet(pet.id);
   pets.delete(pet.id);
   petsByWebContents.delete(pet.webContentsId);
@@ -538,7 +543,8 @@ else {
     surfaces = new WindowSurfaces(screen);
     const refreshDisplays = () => { const displays = screen.getAllDisplays(); environment = { displays, floors: floors(displays) }; };
     refreshDisplays();
-    checkFullscreen();
+    // 启动时先决定初始可见性，避免在已有全屏应用前弹出窗口。
+    fullscreenActive = Boolean(surfaces.fullscreenWindow());
     registerProtocol(); registerIpc();
     const modelArg = process.argv.find(arg => arg.startsWith('--model='))?.slice(8);
     for (const item of saved) addPet(item.modelId, item);

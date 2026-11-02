@@ -205,7 +205,7 @@ function animate(time) {
 function updatePlayback() {
   if (!app) return;
   const configuredFrameRate = [30, 60, 120].includes(prefs.frameRate) ? prefs.frameRate : 60;
-  const frameRate = pose === 'sleep' ? Math.min(configuredFrameRate, 15) : configuredFrameRate;
+  const frameRate = pose === 'sleep' ? Math.min(configuredFrameRate, 60) : configuredFrameRate;
   if (playbackFrameRate !== frameRate) {
     playbackFrameRate = frameRate;
     nextAnimationFrame = app.ticker.lastTime + 1000 / frameRate;

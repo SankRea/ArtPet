@@ -98,7 +98,7 @@ function tickLoop(force = false) {
       const previous = petTickTimes.get(pet);
       const interval = pet.isMoving() ? 1000 / pet.settings.frameRate : !pet.settings.clickThrough ? 200 : 500;
       if (!previous || force || previous.interval !== interval || time + 0.5 >= previous.next) {
-        // A 15 FPS step lasts 67 ms; retain elapsed time instead of slowing movement.
+        // Cap long stalls while retaining elapsed time at the selected frame rate.
         const dt = previous ? Math.min(Math.max((time - previous.last) / 1000, 0), 0.1) : 0;
         pet.tick(dt, now, cursor);
         const nextInterval = pet.isMoving() ? 1000 / pet.settings.frameRate : !pet.settings.clickThrough ? 200 : 500;

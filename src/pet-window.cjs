@@ -4,7 +4,7 @@ const { findModel } = require('./models.cjs');
 const { clamp, stepPhysics } = require('./physics.cjs');
 const { VoiceCaption } = require('./voice-caption.cjs');
 
-const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 30, voiceEnabled: false, idleVoiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, reminderEnabled: false, reminderTime: '09:00', reminderClipId: '034', wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
+const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 60, voiceEnabled: false, idleVoiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, reminderEnabled: false, reminderTime: '09:00', reminderClipId: '034', wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
 const LABELS = { default: '恢复待机', interact: '交互动作', relax: '休息', sit: '坐下', sleep: '睡眠', special: '特殊动作' };
 const IDLE_SLEEP_DELAY = 10 * 60 * 1000;
 const exists = win => win && !win.isDestroyed();
@@ -15,7 +15,9 @@ const reminderClipId = value => typeof value === 'string' && /^\d{3}$/.test(valu
 class PetWindow {
   constructor(host, saved) {
     this.host = host; this.id = saved.id; this.model = findModel(saved.modelId);
-    this.settings = { ...DEFAULTS, scale: number(saved.scale, DEFAULTS.scale, 0.5, 1.5), speed: number(saved.speed, 40, 15, 90), frameRate: [15, 24, 30, 45, 60].includes(saved.frameRate) ? saved.frameRate : DEFAULTS.frameRate, voiceVolume: number(saved.voiceVolume, 0.6, 0, 1) };
+    // Retired presets map to the nearest supported rate; 45 FPS rounds up to 60.
+    const frameRate = [15, 24].includes(saved.frameRate) ? 30 : saved.frameRate === 45 ? 60 : saved.frameRate;
+    this.settings = { ...DEFAULTS, scale: number(saved.scale, DEFAULTS.scale, 0.5, 1.5), speed: number(saved.speed, 40, 15, 90), frameRate: [30, 60, 120].includes(frameRate) ? frameRate : DEFAULTS.frameRate, voiceVolume: number(saved.voiceVolume, 0.6, 0, 1) };
     for (const key of Object.keys(DEFAULTS)) if (typeof DEFAULTS[key] === 'boolean' && typeof saved[key] === 'boolean') this.settings[key] = saved[key];
     this.settings.reminderTime = validReminderTime(saved.reminderTime) ? saved.reminderTime : DEFAULTS.reminderTime;
     this.settings.reminderClipId = reminderClipId(saved.reminderClipId);
@@ -151,7 +153,7 @@ class PetWindow {
     for (const key of Object.keys(DEFAULTS)) if (typeof DEFAULTS[key] === 'boolean' && typeof patch[key] === 'boolean') this.settings[key] = patch[key];
     if ('scale' in patch) this.settings.scale = number(patch.scale, previous.scale, 0.5, 1.5);
     if ('speed' in patch) this.settings.speed = number(patch.speed, previous.speed, 15, 90);
-    if ([15, 24, 30, 45, 60].includes(patch.frameRate)) this.settings.frameRate = patch.frameRate;
+    if ([30, 60, 120].includes(patch.frameRate)) this.settings.frameRate = patch.frameRate;
     if ('voiceVolume' in patch) this.settings.voiceVolume = number(patch.voiceVolume, previous.voiceVolume, 0, 1);
     if (validReminderTime(patch.reminderTime)) this.settings.reminderTime = patch.reminderTime;
     if (typeof patch.reminderClipId === 'string') this.settings.reminderClipId = reminderClipId(patch.reminderClipId);
@@ -368,7 +370,8 @@ class PetWindow {
     if (this.dragging) {
       const drag = this.dragging, dx = cursor.x - drag.cursor.x, dy = cursor.y - drag.cursor.y;
       if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; this.send('pet:dragging', true); }
-      const elapsed = Math.max(0.01, (now - drag.lastTime) / 1000);
+      // A 120 FPS drag sample is about 8 ms; only guard against a zero interval.
+      const elapsed = Math.max(0.001, (now - drag.lastTime) / 1000);
       drag.vx = clamp((cursor.x - drag.lastCursor.x) / elapsed, -1200, 1200);
       drag.vy = clamp((cursor.y - drag.lastCursor.y) / elapsed, -1000, 1200);
       drag.lastCursor = cursor; drag.lastTime = now;

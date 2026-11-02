@@ -12,7 +12,7 @@ const mainPath = path.join(__dirname, '../src/main.cjs');
 const mainSource = fs.readFileSync(mainPath, 'utf8');
 const otherModelId = MODELS.find(model => !model.bundled).id;
 const originalPet = {
-  id: 'saved-pet', modelId: DEFAULT_MODEL_ID, scale: 1.15, frameRate: 45,
+  id: 'saved-pet', modelId: DEFAULT_MODEL_ID, scale: 1.15, frameRate: 120,
   speed: 32, voiceEnabled: true, voiceVolume: 0.35, voiceTextEnabled: false,
   reminderEnabled: true, reminderTime: '18:35', reminderClipId: '034',
   manualMode: true, gravity: false, windowEdges: false, alwaysOnTop: false,

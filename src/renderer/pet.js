@@ -6,7 +6,7 @@ const loading = document.querySelector('#loading');
 const modelUrl = filename => renderModel.assetBase + encodeURIComponent(filename);
 let app, pet, world, envelope, renderModel, fit = 1, direction = 1, bubbleTimer;
 let prefs = { paused: false, visible: true, wander: true }, pose = 'default', dragging = false, pointerPressed = false;
-let animationFrame = null, nextAnimationFrame = 0, playbackFrameRate = 30;
+let animationFrame = null, nextAnimationFrame = 0, playbackFrameRate = 60;
 let actionMap = {}, actionVariants = {}, animationBottoms = new Map(), idleBounds, currentAnimation, displayReady = false, animated = false, hitElapsed = 0, lastHitSignature = '', lastPetRect = '';
 const voicePlayer = new window.ArkPetVoice(data => bridge.voiceCaption(data), (modelId, message) => bridge.voiceError(modelId, message));
 
@@ -204,7 +204,7 @@ function animate(time) {
 }
 function updatePlayback() {
   if (!app) return;
-  const configuredFrameRate = [15, 24, 30, 45, 60].includes(prefs.frameRate) ? prefs.frameRate : 30;
+  const configuredFrameRate = [30, 60, 120].includes(prefs.frameRate) ? prefs.frameRate : 60;
   const frameRate = pose === 'sleep' ? Math.min(configuredFrameRate, 15) : configuredFrameRate;
   if (playbackFrameRate !== frameRate) {
     playbackFrameRate = frameRate;

@@ -2,6 +2,8 @@ const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, protocol, screen, 
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { performance } = require('node:perf_hooks');
+const { setMotionTimerResolution } = require('./motion-timer.cjs');
 const { PetWindow } = require('./pet-window.cjs');
 const { DEFAULT_MODEL_ID, findModel } = require('./models.cjs');
 const { ModelLibrary } = require('./model-library.cjs');
@@ -19,7 +21,8 @@ const ROOT = path.join(__dirname, '..');
 const AUTO_START_NAME = 'ArkPet Surtr';
 const pets = new Map(), petsByWebContents = new Map(), petTrays = new Map();
 let launcher, launcherTray, selectedId, settingsPath, saveTimer, loopTimer, changeTimer, trayIcon, fullscreenTimer, reminderTimer;
-let surfaces, quitting = false, lastTick = Date.now(), shortcutStatus = {};
+let surfaces, quitting = false, shortcutStatus = {};
+let petTickTimes = new WeakMap();
 let library, voices, downloads, modelOperation = null, maxPets = 1, proxyUrl = '';
 let aiSettings, profiles, aiClient, aiChats;
 let environment, loopRunning = false, nextSurfaceScan = 0, launcherCatalogRevision = -1, lastSavedText;
@@ -69,16 +72,16 @@ function changed() {
 function wakeLoop() {
   if (quitting || loopRunning || fullscreenActive) return;
   clearTimeout(loopTimer);
-  loopTimer = setTimeout(tickLoop, 0);
+  loopTimer = setTimeout(() => tickLoop(true), 0);
 }
-function tickLoop() {
+function tickLoop(force = false) {
   loopTimer = null;
   const active = [...pets.values()].filter(pet => exists(pet.win) && pet.win.isVisible());
-  if (quitting || fullscreenActive || !active.length) return;
-  let delay = 500;
+  if (quitting || fullscreenActive || !active.length) { setMotionTimerResolution(false); return; }
+  let nextTick = performance.now() + 500;
   loopRunning = true;
   try {
-    const now = Date.now(), dt = Math.min(Math.max((now - lastTick) / 1000, 0), 0.05); lastTick = now;
+    const now = Date.now(), time = performance.now();
     const detectors = surfaces.available ? active.filter(pet => pet.ready && !pet.paused && pet.settings.gravity && pet.settings.windowEdges) : [];
     const movingDetector = detectors.some(pet => pet.isMoving());
     const supportedByWindow = detectors.some(pet => pet.body.support?.kind === 'window');
@@ -91,11 +94,27 @@ function tickLoop() {
     } else if (!surfaceScanDelay) nextSurfaceScan = 0;
     const needsCursor = active.some(pet => !pet.settings.clickThrough || pet.dragging);
     const cursor = needsCursor ? screen.getCursorScreenPoint() : null;
-    for (const pet of active) pet.tick(dt, now, cursor);
-    delay = active.some(pet => pet.isMoving()) ? 1000 / 30 : needsCursor ? 200 : 500;
+    for (const pet of active) {
+      const previous = petTickTimes.get(pet);
+      const interval = pet.isMoving() ? 1000 / pet.settings.frameRate : !pet.settings.clickThrough ? 200 : 500;
+      if (!previous || force || previous.interval !== interval || time + 0.5 >= previous.next) {
+        // A 15 FPS step lasts 67 ms; retain elapsed time instead of slowing movement.
+        const dt = previous ? Math.min(Math.max((time - previous.last) / 1000, 0), 0.1) : 0;
+        pet.tick(dt, now, cursor);
+        const nextInterval = pet.isMoving() ? 1000 / pet.settings.frameRate : !pet.settings.clickThrough ? 200 : 500;
+        // Advance from the deadline, not the end of the work, without catch-up bursts.
+        const next = previous && !force && previous.interval === nextInterval
+          ? previous.next + Math.max(1, Math.floor((time - previous.next + 0.5) / nextInterval) + 1) * nextInterval
+          : time + nextInterval;
+        petTickTimes.set(pet, { last: time, next, interval: nextInterval });
+      }
+      nextTick = Math.min(nextTick, petTickTimes.get(pet).next);
+    }
   } finally {
     loopRunning = false;
-    if (!quitting && !fullscreenActive) loopTimer = setTimeout(tickLoop, delay);
+    const moving = !quitting && !fullscreenActive && active.some(pet => pet.isMoving());
+    setMotionTimerResolution(moving);
+    if (!quitting && !fullscreenActive) loopTimer = setTimeout(tickLoop, Math.max(0, nextTick - performance.now()));
   }
 }
 function checkFullscreen() {
@@ -105,7 +124,8 @@ function checkFullscreen() {
   if (detected !== null && detected !== fullscreenActive) {
     fullscreenActive = detected;
     clearTimeout(loopTimer); loopTimer = null;
-    lastTick = Date.now(); nextSurfaceScan = 0;
+    petTickTimes = new WeakMap(); nextSurfaceScan = 0;
+    setMotionTimerResolution(false);
     for (const pet of pets.values()) pet.setFullscreenSuspended(detected);
     changed();
   } else if (previousError !== surfaces.fullscreenError) notifyLauncher();
@@ -571,7 +591,7 @@ else {
     for (const pet of pets.values()) pet.changed();
   }).catch(error => { dialog.showErrorBox('ArkPet 启动失败', error.message); app.quit(); });
   app.on('before-quit', () => {
-    quitting = true; modelOperation?.controller.abort(); aiChats?.closeAll(); clearTimeout(loopTimer); clearTimeout(changeTimer); clearInterval(fullscreenTimer); clearInterval(reminderTimer); saveNow(); globalShortcut.unregisterAll();
+    quitting = true; setMotionTimerResolution(false); modelOperation?.controller.abort(); aiChats?.closeAll(); clearTimeout(loopTimer); clearTimeout(changeTimer); clearInterval(fullscreenTimer); clearInterval(reminderTimer); saveNow(); globalShortcut.unregisterAll();
     launcherTray?.destroy(); for (const tray of petTrays.values()) tray.destroy(); petTrays.clear();
   });
   app.on('window-all-closed', () => app.quit());

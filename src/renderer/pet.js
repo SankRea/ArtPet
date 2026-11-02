@@ -6,6 +6,7 @@ const loading = document.querySelector('#loading');
 const modelUrl = filename => renderModel.assetBase + encodeURIComponent(filename);
 let app, pet, world, envelope, renderModel, fit = 1, direction = 1, bubbleTimer;
 let prefs = { paused: false, visible: true, wander: true }, pose = 'default', dragging = false, pointerPressed = false;
+let animationFrame = null, nextAnimationFrame = 0, playbackFrameRate = 30;
 let actionMap = {}, actionVariants = {}, animationBottoms = new Map(), idleBounds, currentAnimation, displayReady = false, animated = false, hitElapsed = 0, lastHitSignature = '', lastPetRect = '';
 const voicePlayer = new window.ArkPetVoice(data => bridge.voiceCaption(data), (modelId, message) => bridge.voiceError(modelId, message));
 
@@ -191,13 +192,32 @@ function applyState(value) {
   updatePlayback();
   updateHitArea();
 }
+function animate(time) {
+  animationFrame = null;
+  const interval = 1000 / playbackFrameRate;
+  if (time + 0.5 >= nextAnimationFrame) {
+    // Keep fractional milliseconds: Pixi 7's maxFPS truncates them and skips frames.
+    nextAnimationFrame += Math.max(1, Math.floor((time - nextAnimationFrame + 0.5) / interval) + 1) * interval;
+    app.ticker.update(time);
+  }
+  animationFrame = requestAnimationFrame(animate);
+}
 function updatePlayback() {
   if (!app) return;
   const configuredFrameRate = [15, 24, 30, 45, 60].includes(prefs.frameRate) ? prefs.frameRate : 30;
   const frameRate = pose === 'sleep' ? Math.min(configuredFrameRate, 15) : configuredFrameRate;
-  if (app.ticker.maxFPS !== frameRate) app.ticker.maxFPS = frameRate;
-  if (displayReady && animated && prefs.model?.id === renderModel.id && prefs.visible && !document.hidden && !prefs.paused && !prefs.fullscreenSuspended && !prefs.error && !dragging) app.start();
-  else app.stop();
+  if (playbackFrameRate !== frameRate) {
+    playbackFrameRate = frameRate;
+    nextAnimationFrame = app.ticker.lastTime + 1000 / frameRate;
+  }
+  const playing = displayReady && animated && prefs.model?.id === renderModel.id && prefs.visible && !document.hidden && !prefs.paused && !prefs.fullscreenSuspended && !prefs.error && !dragging;
+  if (playing && animationFrame === null) {
+    app.ticker.lastTime = performance.now();
+    nextAnimationFrame = app.ticker.lastTime + 1000 / frameRate;
+    animationFrame = requestAnimationFrame(animate);
+  } else if (!playing && animationFrame !== null) {
+    cancelAnimationFrame(animationFrame); animationFrame = null;
+  }
 }
 bridge.onState(applyState);
 window.addEventListener('resize', layout);
@@ -259,7 +279,7 @@ async function init() {
 function showError(error) {
   displayReady = false;
   voicePlayer.stop(true);
-  console.error(error); app?.stop(); hit.hidden = true; loading.hidden = false;
+  console.error(error); updatePlayback(); hit.hidden = true; loading.hidden = false;
   document.querySelector('#loading-dot').hidden = true;
   document.querySelector('#load-title').textContent = '模型加载失败';
   document.querySelector('#load-detail').textContent = error.message || String(error);
@@ -267,5 +287,5 @@ function showError(error) {
   bridge.error(error.message || String(error));
 }
 
-window.addEventListener('beforeunload', () => { voicePlayer.stop(true); clearTimeout(bubbleTimer); app?.destroy(true, { children: true }); });
+window.addEventListener('beforeunload', () => { cancelAnimationFrame(animationFrame); voicePlayer.stop(true); clearTimeout(bubbleTimer); app?.destroy(true, { children: true }); });
 init();

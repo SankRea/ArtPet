@@ -62,6 +62,7 @@ function runtime(directory, { settingsOpen = true, cached = () => true } = {}) {
     require(id) {
       if (id === 'electron') return electron;
       if (id === './pet-window.cjs') return { PetWindow };
+      if (id === './motion-timer.cjs') return { setMotionTimerResolution() {} };
       if (id === './models.cjs') return { DEFAULT_MODEL_ID, findModel };
       if (id === './download-client.cjs') return proxyHelpers;
       if (id === '../config.json') return { maxPets: 1 };

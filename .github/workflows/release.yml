@@ -1,0 +1,88 @@
+name: Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Check release version
+        id: release
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            node scripts/release-metadata.cjs $env:GITHUB_REF_NAME
+          } else {
+            node scripts/release-metadata.cjs
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Install locked dependencies
+        run: npm ci --include=dev --include=optional --no-audit --no-fund
+
+      - name: Package installer and portable app
+        run: npm run package:win
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: ArtPet-${{ steps.release.outputs.version }}-win-x64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release/${{ steps.release.outputs.version }}/ArtPet-${{ steps.release.outputs.version }}-win-x64-setup.exe
+            release/${{ steps.release.outputs.version }}/ArtPet-${{ steps.release.outputs.version }}-win-x64-portable.exe
+            release/${{ steps.release.outputs.version }}/SHA256SUMS.txt
+
+      - name: Upload to draft release
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $draft = gh release view $tag --json isDraft --jq .isDraft
+          if ($LASTEXITCODE -eq 0) {
+            if ($draft -ne 'true') { throw "Release $tag is already published; refusing to replace its files." }
+          } else {
+            $arguments = @('release', 'create', $tag, '--verify-tag', '--draft', '--title', "ArtPet $env:RELEASE_VERSION", '--generate-notes')
+            if ($env:RELEASE_VERSION.Contains('-')) { $arguments += '--prerelease' }
+            gh @arguments
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $directory = "release/$env:RELEASE_VERSION"
+          $files = @(
+            "$directory/ArtPet-$($env:RELEASE_VERSION)-win-x64-setup.exe",
+            "$directory/ArtPet-$($env:RELEASE_VERSION)-win-x64-portable.exe",
+            "$directory/SHA256SUMS.txt"
+          )
+          gh release upload $tag @files --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

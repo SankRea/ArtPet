@@ -46,7 +46,7 @@ if errorlevel 1 (
 :launch
 start "" "node_modules\electron\dist\electron.exe" "." %*
 if errorlevel 1 (
-  echo Failed to start ArkPet.
+  echo Failed to start ArtPet.
   pause
   exit /b 1
 )

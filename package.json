@@ -1,10 +1,14 @@
 {
-  "name": "arkpet-surtr",
+  "name": "artpet",
+  "productName": "ArtPet",
   "version": "1.0.0",
   "private": true,
-  "description": "史尔特尔泳装桌面宠物 · ArkPet",
-  "main": "src/main.cjs",
-  "author": "ArkPet",
+  "description": "ArtPet · 明日方舟桌面宠物",
+  "main": "src/main/index.cjs",
+  "author": "ArtPet",
+  "homepage": "https://github.com/SankRea/ArtPet",
+  "repository": { "type": "git", "url": "https://github.com/SankRea/ArtPet.git" },
+  "bugs": { "url": "https://github.com/SankRea/ArtPet/issues" },
   "license": "UNLICENSED",
   "engines": {
     "node": ">=22.12.0"
@@ -12,7 +16,10 @@
   "scripts": {
     "start": "electron .",
     "start:standalone": "electron . --standalone",
-    "package:win": "electron-builder --win portable --x64"
+    "package:win": "node scripts/package-win.cjs",
+    "package:win:installer": "node scripts/package-win.cjs installer",
+    "package:win:portable": "node scripts/package-win.cjs portable",
+    "release:check": "node scripts/release-metadata.cjs"
   },
   "dependencies": {
     "koffi": "3.2.1",
@@ -22,30 +29,5 @@
   "devDependencies": {
     "electron": "44.3.0",
     "electron-builder": "26.15.3"
-  },
-  "build": {
-    "appId": "local.arkpet.surtr",
-    "productName": "ArkPet Surtr",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "src/**/*",
-      "assets/**/*",
-      "config.json",
-      "README.md",
-      "THIRD_PARTY_NOTICES.md",
-      "package.json"
-    ],
-    "asar": true,
-    "asarUnpack": ["node_modules/@koromix/**/*"],
-    "npmRebuild": false,
-    "win": {
-      "target": "portable",
-      "signAndEditExecutable": false
-    },
-    "portable": {
-      "artifactName": "ArkPet-Surtr-${version}-portable.exe"
-    }
   }
 }

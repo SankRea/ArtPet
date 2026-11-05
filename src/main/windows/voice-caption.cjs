@@ -1,6 +1,7 @@
 const { BrowserWindow, screen } = require('electron');
 const path = require('node:path');
-const { clamp } = require('./physics.cjs');
+const { PRELOAD } = require('../paths.cjs');
+const { clamp } = require('../services/physics.cjs');
 
 class VoiceCaption {
   constructor(pet) { this.pet = pet; this.sequence = 0; }
@@ -20,7 +21,7 @@ class VoiceCaption {
       transparent: true, backgroundColor: '#00000000', hasShadow: false,
       resizable: false, maximizable: false, minimizable: false, fullscreenable: false,
       focusable: false, skipTaskbar: true, alwaysOnTop: pet.settings.alwaysOnTop,
-      webPreferences: { preload: path.join(__dirname, 'voice-caption-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
+      webPreferences: { preload: path.join(PRELOAD, 'voice-caption.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
     });
     const win = this.win;
     pet.host.secureWindow(win);

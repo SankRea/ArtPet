@@ -1,4 +1,4 @@
-const bundledCatalog = require('../assets/operators.json');
+const bundledCatalog = require('../../../assets/operators.json');
 const DEFAULT_MODEL_ID = '350_surtr_summer#9';
 const ACTION_CANDIDATES = {
   default: ['Relax', 'Idle', 'Stand', 'Default'], move: ['Move', 'Move_Loop', 'Walk'],

@@ -4,11 +4,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
+const { createRequire } = require('node:module');
 const test = require('node:test');
-const { DEFAULT_MODEL_ID, MODELS, findModel } = require('../src/models.cjs');
-const proxyHelpers = require('../src/download-client.cjs');
+const { DEFAULT_MODEL_ID, MODELS, findModel } = require('../src/main/services/models.cjs');
+const proxyHelpers = require('../src/main/services/download-client.cjs');
 
-const mainPath = path.join(__dirname, '../src/main.cjs');
+const mainPath = path.join(__dirname, '../src/main/index.cjs');
 const mainSource = fs.readFileSync(mainPath, 'utf8');
 const otherModelId = MODELS.find(model => !model.bundled).id;
 const originalPet = {
@@ -39,6 +40,8 @@ function runtime(directory, { settingsOpen = true, cached = () => true } = {}) {
   const app = new EventEmitter();
   app.getPath = () => directory;
   app.setName = () => {};
+  app.setPath = () => {};
+  app.setAppUserModelId = () => {};
   app.requestSingleInstanceLock = () => true;
   app.whenReady = () => new Promise(() => {});
   app.quit = () => app.emit('before-quit');
@@ -56,18 +59,18 @@ function runtime(directory, { settingsOpen = true, cached = () => true } = {}) {
     }
     serialise() { return copy(this.record); }
   }
-  const unusedModules = new Set(['./model-library.cjs', './voice-library.cjs', './window-surfaces.cjs',
-    './physics.cjs', './ai-settings-store.cjs', './prts-profile-source.cjs', './ai-client.cjs', './ai-chat-window.cjs']);
+  const unusedModules = new Set(['./services/model-library.cjs', './services/voice-library.cjs', './platform/windows/window-surfaces.cjs',
+    './services/physics.cjs', './services/ai-settings-store.cjs', './services/prts-profile-source.cjs', './services/ai-client.cjs', './windows/ai-chat-window.cjs']);
   const context = vm.createContext({
     require(id) {
       if (id === 'electron') return electron;
-      if (id === './pet-window.cjs') return { PetWindow };
-      if (id === './motion-timer.cjs') return { setMotionTimerResolution() {} };
-      if (id === './models.cjs') return { DEFAULT_MODEL_ID, findModel };
-      if (id === './download-client.cjs') return proxyHelpers;
-      if (id === '../config.json') return { maxPets: 1 };
+      if (id === './windows/pet-window.cjs') return { PetWindow };
+      if (id === './platform/windows/motion-timer.cjs') return { setMotionTimerResolution() {} };
+      if (id === './services/models.cjs') return { DEFAULT_MODEL_ID, findModel };
+      if (id === './services/download-client.cjs') return proxyHelpers;
+      if (id === '../../config.json') return { maxPets: 1 };
       if (unusedModules.has(id)) return {};
-      return require(id);
+      return createRequire(mainPath)(id);
     },
     __dirname: path.dirname(mainPath), console, process,
     setTimeout: () => 1, clearTimeout() {}, clearInterval() {},

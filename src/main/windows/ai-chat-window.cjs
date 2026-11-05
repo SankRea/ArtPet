@@ -1,6 +1,7 @@
 const path = require('node:path');
+const { PRELOAD } = require('../paths.cjs');
 const { BrowserWindow, shell } = require('electron');
-const { sourceUrl } = require('./prts-profile-source.cjs');
+const { sourceUrl } = require('../services/prts-profile-source.cjs');
 
 const exists = win => win && !win.isDestroyed();
 
@@ -17,7 +18,7 @@ class AiChatWindows {
     const win = new BrowserWindow({
       width: 420, height: 560, minWidth: 360, minHeight: 420,
       title: `${pet.model.name} · 对话`, backgroundColor: '#f4f5f8', autoHideMenuBar: true, show: false,
-      webPreferences: { preload: path.join(__dirname, 'ai-chat-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
+      webPreferences: { preload: path.join(PRELOAD, 'ai-chat.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
     });
     const contentsId = win.webContents.id;
     this.windows.set(pet.id, win);

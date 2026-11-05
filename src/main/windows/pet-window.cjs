@@ -1,7 +1,9 @@
 const { BrowserWindow, Menu, screen } = require('electron');
 const path = require('node:path');
-const { findModel } = require('./models.cjs');
-const { clamp, stepPhysics } = require('./physics.cjs');
+const { PRELOAD } = require('../paths.cjs');
+const product = require('../../shared/product.cjs');
+const { findModel } = require('../services/models.cjs');
+const { clamp, stepPhysics } = require('../services/physics.cjs');
 const { VoiceCaption } = require('./voice-caption.cjs');
 
 const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 60, voiceEnabled: false, idleVoiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, reminderEnabled: false, reminderTime: '09:00', reminderClipId: '034', wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, showFocusOutline: false, translucent: false, form: null, x: null, y: null };
@@ -40,11 +42,11 @@ class PetWindow {
     this.nextBehavior = now + 9000 + Math.random() * 4000;
     this.sleepAt = now + IDLE_SLEEP_DELAY;
     this.win = new BrowserWindow({
-      ...size, x: Math.round(this.body.x), y: Math.round(this.body.y), title: `${this.model.name} · ArkPet`,
+      ...size, x: Math.round(this.body.x), y: Math.round(this.body.y), title: `${this.model.name} · ${product.name}`,
       transparent: true, backgroundColor: '#00000000', frame: false, resizable: false, maximizable: false,
       fullscreenable: false, minimizable: false, hasShadow: false, skipTaskbar: true, show: false,
       alwaysOnTop: this.settings.alwaysOnTop,
-      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required' }
+      webPreferences: { preload: path.join(PRELOAD, 'pet.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true, autoplayPolicy: 'no-user-gesture-required' }
     });
     this.webContentsId = this.win.webContents.id;
     host.secureWindow(this.win);
@@ -218,7 +220,7 @@ class PetWindow {
     this.ready = false; this.error = ''; this.animations = []; this.resolvedActions = {}; this.supported = []; this.hitRects = [];
     this.actionVariants = {}; this.idleAnimations = []; this.currentAnimation = null;
     this.manualHold = false; this.pose = 'default'; this.body.vx = 0; this.body.vy = 0;
-    this.win.setTitle(`${model.name} · ArkPet`);
+    this.win.setTitle(`${model.name} · ${product.name}`);
     this.changed(); this.host.save(); this.win.webContents.reload();
   }
   setGeometry(data) {

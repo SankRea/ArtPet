@@ -123,6 +123,7 @@ function renderOperation(operation) {
   }
 }
 function render(data) {
+  byId('app-version').textContent = `${data.application.name} ${data.application.version}`;
   const catalogChanged = Boolean(data.models);
   currentData = { ...data, models: data.models || currentData?.models || [] };
   if (catalogChanged) {
@@ -159,7 +160,7 @@ function render(data) {
   const storageMessages = {
     portable: '便携版的设置与下载数据保存在程序旁，可随程序文件夹一起移动。',
     fallback: '程序所在目录不可写，设置与下载数据已改存到当前用户目录。',
-    system: '开发运行时使用当前用户目录；便携版发布后会使用程序旁的 ArkPet-data 文件夹。'
+    system: '安装版与开发运行使用当前用户目录；便携版使用程序旁的 ArkPet-data 文件夹。'
   };
   byId('storage-description').textContent = storageMessages[data.storage?.mode] || storageMessages.system;
   byId('storage-path').textContent = data.storage?.directory || '';

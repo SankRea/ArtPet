@@ -1,26 +1,33 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, protocol, screen, globalShortcut, dialog, shell } = require('electron');
+const { app, Menu, Tray, ipcMain, protocol, screen, globalShortcut, dialog, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { performance } = require('node:perf_hooks');
-const { setMotionTimerResolution } = require('./motion-timer.cjs');
-const { PetWindow } = require('./pet-window.cjs');
-const { DEFAULT_MODEL_ID, findModel } = require('./models.cjs');
-const { ModelLibrary } = require('./model-library.cjs');
-const { VoiceLibrary } = require('./voice-library.cjs');
-const { DownloadClient, normaliseProxy, normaliseProxyParts, splitProxy } = require('./download-client.cjs');
-const defaultConfig = require('../config.json');
-const { WindowSurfaces } = require('./window-surfaces.cjs');
-const { floors } = require('./physics.cjs');
-const { AiSettingsStore } = require('./ai-settings-store.cjs');
-const { PrtsProfileSource } = require('./prts-profile-source.cjs');
-const { AiClient } = require('./ai-client.cjs');
-const { AiChatWindows } = require('./ai-chat-window.cjs');
+const { setMotionTimerResolution } = require('./platform/windows/motion-timer.cjs');
+const { PetWindow } = require('./windows/pet-window.cjs');
+const { DEFAULT_MODEL_ID, findModel } = require('./services/models.cjs');
+const { ModelLibrary } = require('./services/model-library.cjs');
+const { VoiceLibrary } = require('./services/voice-library.cjs');
+const { DownloadClient, normaliseProxy, normaliseProxyParts, splitProxy } = require('./services/download-client.cjs');
+const defaultConfig = require('../../config.json');
+const { WindowSurfaces } = require('./platform/windows/window-surfaces.cjs');
+const { floors } = require('./services/physics.cjs');
+const { AiSettingsStore } = require('./services/ai-settings-store.cjs');
+const { PrtsProfileSource } = require('./services/prts-profile-source.cjs');
+const { AiClient } = require('./services/ai-client.cjs');
+const { AiChatWindows } = require('./windows/ai-chat-window.cjs');
 
-const ROOT = path.join(__dirname, '..');
-const AUTO_START_NAME = 'ArkPet Surtr';
+const product = require('../shared/product.cjs');
+const { prepareDataDirectory } = require('./services/data-directory.cjs');
+const { createAutoStart } = require('./platform/windows/auto-start.cjs');
+const { secureWindow } = require('./windows/security.cjs');
+const { createSettingsWindow } = require('./windows/settings-window.cjs');
+const { makeIcon } = require('./windows/icon.cjs');
+const { registerHandlers } = require('./ipc/register.cjs');
+const { registerProtocol } = require('./protocol.cjs');
+const { state: autoStartState, update: updateAutoStart } = createAutoStart(app, changed);
 const pets = new Map(), petsByWebContents = new Map(), petTrays = new Map();
-let launcher, launcherTray, selectedId, settingsPath, saveTimer, loopTimer, changeTimer, trayIcon, fullscreenTimer, reminderTimer;
+let launcher, launcherTray, selectedId, settingsPath, saveTimer, loopTimer, changeTimer, fullscreenTimer, reminderTimer;
 let surfaces, quitting = false, shortcutStatus = {};
 let petTickTimes = new WeakMap();
 let library, voices, downloads, modelOperation = null, maxPets = 1, proxyUrl = '';
@@ -30,35 +37,19 @@ let dataDirectory, storageMode = 'system', lastClosedPet = null;
 let fullscreenActive = false;
 const exists = win => win && !win.isDestroyed();
 protocol.registerSchemesAsPrivileged([{ scheme: 'arkpet', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
-app.setName('ArkPet Surtr');
-
-function prepareDataDirectory() {
-  const systemDirectory = app.getPath('userData');
-  const portableDirectory = process.env.PORTABLE_EXECUTABLE_DIR;
-  if (!app.isPackaged || !portableDirectory || !path.isAbsolute(portableDirectory)) {
-    dataDirectory = systemDirectory;
-    storageMode = 'system';
-    return;
-  }
-  const preferred = path.join(portableDirectory, 'ArkPet-data');
-  try {
-    fs.mkdirSync(preferred, { recursive: true });
-    fs.accessSync(preferred, fs.constants.R_OK | fs.constants.W_OK);
-    dataDirectory = preferred;
-    storageMode = 'portable';
-  } catch (error) {
-    console.warn(`便携版数据目录不可用，改用系统用户数据目录：${error.message}`);
-    dataDirectory = systemDirectory;
-    storageMode = 'fallback';
-  }
-}
+// Keep the established data location when changing the public product name.
+const legacyUserData = path.join(app.getPath('appData'), product.dataDirectoryName);
+fs.mkdirSync(legacyUserData, { recursive: true });
+app.setPath('userData', legacyUserData);
+app.setName(product.name);
+app.setAppUserModelId(product.appId);
 
 function globalState() { return { shortcutStatus, windowDetection: { available: surfaces?.available || false, error: surfaces?.error || '' }, fullscreen: { active: fullscreenActive, available: surfaces?.available || false, error: surfaces?.fullscreenError || '' } }; }
 function operationState() {
   return modelOperation ? { mode: modelOperation.mode, modelId: modelOperation.modelId, name: modelOperation.name, progress: modelOperation.progress } : null;
 }
 function launcherState(includeCatalog = true) {
-  const state = { selectedId, pets: [...pets.values()].map(pet => pet.state(pet.id === selectedId)), maxPets, ...splitProxy(proxyUrl), ai: aiSettings?.state() || {}, autoStart: autoStartState(), storage: { directory: dataDirectory, mode: storageMode }, catalogUpdate: library.updateState(), operation: operationState(), ...globalState() };
+  const state = { application: { name: product.name, version: product.version }, selectedId, pets: [...pets.values()].map(pet => pet.state(pet.id === selectedId)), maxPets, ...splitProxy(proxyUrl), ai: aiSettings?.state() || {}, autoStart: autoStartState(), storage: { directory: dataDirectory, mode: storageMode }, catalogUpdate: library.updateState(), operation: operationState(), ...globalState() };
   if (includeCatalog) { state.models = library.list(); launcherCatalogRevision = library.revision; }
   return state;
 }
@@ -151,39 +142,6 @@ function saveNow() {
   } catch (error) { console.error('无法保存设置:', error.message); return error.message; }
 }
 function save() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 500); }
-function autoStartOptions() {
-  const portableExecutable = process.env.PORTABLE_EXECUTABLE_FILE;
-  if (process.platform === 'win32' && portableExecutable && path.isAbsolute(portableExecutable)) {
-    return { path: portableExecutable, args: ['--standalone'] };
-  }
-  return { path: process.execPath, args: app.isPackaged ? ['--standalone'] : [ROOT, '--standalone'] };
-}
-function autoStartState() {
-  if (process.platform !== 'win32') return { available: false, enabled: false, registered: false, error: '当前系统不支持开机自动启动设置。' };
-  try {
-    const options = autoStartOptions();
-    const settings = app.getLoginItemSettings(options);
-    const executable = path.resolve(options.path).toLowerCase();
-    const launchItem = settings.launchItems?.find(item => item.name === AUTO_START_NAME && path.resolve(item.path).toLowerCase() === executable);
-    const registered = Boolean(launchItem || settings.openAtLogin);
-    const enabled = registered && (launchItem ? launchItem.enabled !== false : settings.executableWillLaunchAtLogin !== false);
-    return { available: true, enabled, registered, error: '' };
-  } catch (error) {
-    return { available: false, enabled: false, registered: false, error: `无法读取系统启动项：${error.message}` };
-  }
-}
-function updateAutoStart(value) {
-  if (typeof value !== 'boolean') return { ok: false, error: '开机自动启动设置无效。' };
-  const current = autoStartState();
-  if (!current.available) return { ok: false, error: current.error };
-  try {
-    app.setLoginItemSettings({ openAtLogin: value, enabled: value, name: AUTO_START_NAME, ...autoStartOptions() });
-    const state = autoStartState();
-    if (state.enabled !== value) throw new Error(value ? '系统未能启用该启动项。' : '系统未能移除该启动项。');
-    changed();
-    return { ok: true, ...state };
-  } catch (error) { return { ok: false, error: `无法修改开机自动启动设置：${error.message}` }; }
-}
 function load() {
   settingsPath = path.join(dataDirectory, 'settings.json');
   const previousSettingsPath = path.join(app.getPath('userData'), 'settings.json');
@@ -207,17 +165,6 @@ function load() {
   }
   // Migrate the old default once, while preserving an explicitly changed size.
   return [{ ...saved, id: randomUUID(), modelId: DEFAULT_MODEL_ID, scale: !Number.isFinite(saved.scale) || saved.scale === 1 ? 0.75 : saved.scale }];
-}
-function secureWindow(win) {
-  // Page zoom is shared by origin and bypasses the pet's scale and geometry.
-  // Reapply after navigation so model reloads also keep CSS pixels aligned with DIP.
-  const disablePageZoom = () => win.webContents.setZoomMode('disabled');
-  disablePageZoom();
-  win.webContents.on('did-navigate', disablePageZoom);
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  win.webContents.on('will-navigate', event => event.preventDefault());
-  win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  win.webContents.session.setPermissionCheckHandler(() => false);
 }
 function addPet(modelId, saved = pets.size ? {} : lastClosedPet || {}) {
   if (pets.size >= maxPets || !findModel(modelId) || !library.isCached(modelId)) return;
@@ -370,32 +317,15 @@ function openLauncher(id) {
   if (pets.has(id)) selectedId = id;
   if (exists(launcher)) { launcher.show(); launcher.focus(); changed(); return; }
   launcherCatalogRevision = -1;
-  launcher = new BrowserWindow({
-    width: 780, height: 700, minWidth: 620, minHeight: 560, title: 'ArkPet 设置',
-    backgroundColor: '#ffffff', autoHideMenuBar: true, show: false, icon: makeIcon(),
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
+  launcher = createSettingsWindow({
+    onReady: () => { launcher.show(); changed(); },
+    onRestore: notifyLauncher,
+    onClosed: () => {
+      launcher = null;
+      if (!quitting) { syncTrays(); if (!pets.size) app.quit(); }
+    }
   });
-  secureWindow(launcher);
-  launcher.once('ready-to-show', () => { launcher.show(); changed(); });
-  launcher.on('restore', notifyLauncher);
-  launcher.on('closed', () => {
-    launcher = null;
-    if (!quitting) { syncTrays(); if (!pets.size) app.quit(); }
-  });
-  launcher.loadURL('arkpet://app/renderer/settings.html'); syncTrays();
-}
-function makeIcon() {
-  if (trayIcon) return trayIcon;
-  const size = 32, bitmap = Buffer.alloc(size * size * 4);
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const scoop = (x - 16) ** 2 + (y - 11) ** 2 <= 90;
-    const cone = y >= 16 && y <= 29 && Math.abs(x - 16) <= (30 - y) * 0.55;
-    if (!scoop && !cone) continue;
-    const i = (y * size + x) * 4;
-    bitmap[i] = scoop ? 128 : 140; bitmap[i + 1] = scoop ? 125 : 204; bitmap[i + 2] = scoop ? 242 : 247; bitmap[i + 3] = 255;
-  }
-  trayIcon = nativeImage.createFromBitmap(bitmap, { width: size, height: size });
-  return trayIcon;
+  syncTrays();
 }
 function syncTrays() {
   if (quitting) return;
@@ -403,7 +333,7 @@ function syncTrays() {
     for (const tray of petTrays.values()) tray.destroy();
     petTrays.clear();
     if (!launcherTray) {
-      launcherTray = new Tray(makeIcon()); launcherTray.setToolTip('ArkPet · 设置');
+      launcherTray = new Tray(makeIcon()); launcherTray.setToolTip(`${product.name} · 设置`);
       launcherTray.on('double-click', () => openLauncher());
     }
     launcherTray.setContextMenu(Menu.buildFromTemplate([
@@ -424,118 +354,18 @@ function syncTrays() {
         tray = new Tray(makeIcon());
         tray.on('double-click', () => openLauncher(pet.id)); petTrays.set(pet.id, tray);
       }
-      tray.setToolTip(`ArkPet · ${pet.model.name}`);
+      tray.setToolTip(`${product.name} · ${pet.model.name}`);
       tray.setContextMenu(Menu.buildFromTemplate(pet.menu()));
     }
   }
 }
 
-function senderPet(event) {
-  const pet = petsByWebContents.get(event.sender.id);
-  return pet?.win?.webContents === event.sender ? pet : undefined;
-}
-function trusted(event) { return event.senderFrame === event.sender.mainFrame && (Boolean(senderPet(event)) || event.sender === launcher?.webContents); }
-function target(event, id) { return trusted(event) ? senderPet(event) || pets.get(id) : undefined; }
 function registerIpc() {
-  ipcMain.handle('pet:get-state', event => trusted(event) ? senderPet(event)?.state() || launcherState() : null);
-  ipcMain.on('pet:settings', (event, { patch, id } = {}) => target(event, id)?.updateSettings(patch));
-  ipcMain.on('pet:action', (event, { action, id } = {}) => target(event, id)?.act(action));
-  ipcMain.on('pet:interact', event => { if (trusted(event)) senderPet(event)?.interact(); });
-  ipcMain.on('pet:walk', (event, { direction, id } = {}) => target(event, id)?.startWalking(direction));
-  ipcMain.on('pet:form', (event, { form, id } = {}) => target(event, id)?.setForm(form));
-  ipcMain.on('pet:command', (event, { command, id } = {}) => {
-    const pet = target(event, id);
-    if (!trusted(event)) return;
-    if (command === 'settings') { openLauncher(pet?.id); return; }
-    if (command === 'quit-all') { app.quit(); return; }
-    if (!pet) return;
-    const commands = { visibility: () => pet.toggleVisible(), reset: () => pet.reset(), pause: () => pet.togglePause(), reload: () => pet.reload(), quit: () => closePet(pet.id) };
-    if (Object.hasOwn(commands, command)) commands[command]();
-  });
-  ipcMain.handle('launcher:model', (event, request) => trusted(event) && event.sender === launcher?.webContents && request ? selectModel(request) : { ok: false, error: '请求无效。' });
-  ipcMain.handle('launcher:catalog-update', (event, action) => trusted(event) && event.sender === launcher?.webContents ? updateModelCatalog(action) : { ok: false, error: '请求无效。' });
-  ipcMain.handle('launcher:limit', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateLimit(value) : { ok: false, error: '请求无效。' });
-  ipcMain.handle('launcher:proxy', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateProxy(value) : { ok: false, error: '请求无效。' });
-  ipcMain.handle('launcher:ai-settings', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateAi(value) : { ok: false, error: '请求无效。' });
-  ipcMain.handle('launcher:ai-models', (event, value) => trusted(event) && event.sender === launcher?.webContents ? aiClient.listModels(value) : { ok: false, error: '请求无效。' });
-  ipcMain.handle('launcher:ai-test', (event, value) => trusted(event) && event.sender === launcher?.webContents ? aiClient.test(value) : { ok: false, error: '请求无效。' });
-  ipcMain.handle('launcher:ai-key-clear', event => trusted(event) && event.sender === launcher?.webContents ? clearAiKey() : { ok: false, error: '请求无效。' });
-  ipcMain.handle('launcher:auto-start', (event, value) => trusted(event) && event.sender === launcher?.webContents ? updateAutoStart(value) : { ok: false, error: '请求无效。' });
-  ipcMain.handle('launcher:voice-download', (event, id) => trusted(event) && event.sender === launcher?.webContents ? downloadVoice(id) : { ok: false, error: '请求无效。' });
-  ipcMain.on('pet:voice-play', (event, { clipId, id } = {}) => {
-    const pet = target(event, id);
-    if (pet?.settings.voiceEnabled && pet.ready && voices.state(pet.model.id).cached && voices.state(pet.model.id).clips.some(clip => clip.id === clipId)) pet.send('pet:voice-play', clipId);
-  });
-  ipcMain.on('pet:voice-stop', (event, id) => target(event, id)?.stopVoice());
-  ipcMain.on('pet:voice-text-source', (event, id) => {
-    const pet = target(event, id), url = pet && voices.textSource(pet.model.id);
-    if (url) shell.openExternal(url).catch(() => {});
-  });
-  ipcMain.on('pet:voice-caption', (event, data) => { if (trusted(event)) senderPet(event)?.showVoiceCaption(data); });
-  ipcMain.on('caption:resize', (event, data) => {
-    if (event.senderFrame !== event.sender.mainFrame) return;
-    for (const pet of pets.values()) if (pet.caption.win?.webContents === event.sender) { pet.caption.resize(data); break; }
-  });
-  ipcMain.on('pet:voice-error', (event, { modelId, message } = {}) => {
-    const pet = senderPet(event);
-    if (trusted(event) && pet && pet.model.id === modelId) {
-      pet.voiceError = String(message || '').slice(0, 300);
-      if (pet.voiceError) voices.invalidate(modelId);
-      pet.changed();
-    }
-  });
-  ipcMain.on('launcher:cancel-download', event => { if (trusted(event) && event.sender === launcher?.webContents) modelOperation?.controller.abort(); });
-  ipcMain.on('launcher:select', (event, id) => { if (trusted(event) && event.sender === launcher?.webContents && pets.has(id)) { selectedId = id; changed(); save(); } });
-  ipcMain.on('launcher:detach', event => { if (trusted(event) && event.sender === launcher?.webContents) launcher.close(); });
-  ipcMain.on('pet:ready', (event, data) => { if (trusted(event)) senderPet(event)?.loaded(data); });
-  ipcMain.on('pet:error', (event, message) => { const pet = senderPet(event); if (trusted(event) && pet) { pet.ready = false; pet.error = String(message).slice(0, 500); pet.changed(); } });
-  ipcMain.on('pet:geometry', (event, data) => { if (trusted(event)) senderPet(event)?.setGeometry(data); });
-  ipcMain.on('pet:hit-rects', (event, rects) => {
-    const pet = senderPet(event);
-    if (!trusted(event) || !pet || !Array.isArray(rects)) return;
-    pet.hitRects = rects.slice(0, 10).filter(rect => rect && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(rect[key])) && rect.width > 0 && rect.height > 0);
-  });
-  ipcMain.on('pet:drag-start', event => { if (trusted(event)) senderPet(event)?.startDrag(); });
-  ipcMain.on('pet:drag-end', (event, cancelled) => { if (trusted(event)) senderPet(event)?.endDrag(Boolean(cancelled)); });
-  ipcMain.on('pet:context-menu', event => { if (trusted(event)) senderPet(event)?.contextMenu(); });
-  aiChats.register(ipcMain);
-}
-
-function registerProtocol() {
-  const vendor = new Map([
-    ['/vendor/pixi.js', path.join(ROOT, 'node_modules/pixi.js/dist/pixi.min.js')],
-    ['/vendor/pixi-spine.js', path.join(ROOT, 'node_modules/pixi-spine/dist/pixi-spine.js')]
-  ]);
-  const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.json': 'application/json', '.atlas': 'text/plain; charset=utf-8', '.skel': 'application/octet-stream', '.mp3': 'audio/mpeg' };
-  protocol.handle('arkpet', async request => {
-    try {
-      const url = new URL(request.url);
-      if (url.hostname !== 'app' || request.method !== 'GET') return new Response('Forbidden', { status: 403 });
-      const pathname = decodeURIComponent(url.pathname);
-      let file = vendor.get(pathname);
-      if (pathname.startsWith('/voices/')) {
-        const pieces = pathname.split('/');
-        if (pieces.length !== 4) return new Response('Forbidden', { status: 403 });
-        file = voices.resolve(pieces[2], pieces[3]);
-        if (!file) return new Response('Not found', { status: 404 });
-      }
-      if (pathname.startsWith('/models/')) {
-        const pieces = pathname.split('/');
-        if (pieces.length !== 4) return new Response('Forbidden', { status: 403 });
-        file = library.resolve(pieces[2], pieces[3]);
-        if (!file) return new Response('Not found', { status: 404 });
-      }
-      if (!file) {
-        const base = pathname.startsWith('/renderer/') ? path.join(__dirname, 'renderer') : pathname.startsWith('/assets/') ? path.join(ROOT, 'assets') : null;
-        if (!base) return new Response('Not found', { status: 404 });
-        file = path.resolve(base, pathname.split('/').slice(2).join('/'));
-        const relative = path.relative(base, file);
-        if (relative.startsWith('..') || path.isAbsolute(relative)) return new Response('Forbidden', { status: 403 });
-      }
-      const body = await fs.promises.readFile(file);
-      return new Response(body, { headers: { 'Content-Type': mime[path.extname(pathname)] || mime[path.extname(file)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff' } });
-    } catch { return new Response('Not found', { status: 404 }); }
-  });
+  registerHandlers({ ipcMain, app, shell, pets, petsByWebContents, getLauncher: () => launcher, launcherState,
+    openLauncher, closePet, selectModel, updateModelCatalog, updateLimit, updateProxy, updateAi,
+    aiClient, clearAiKey, updateAutoStart, downloadVoice, voices, aiChats,
+    cancelDownload: () => modelOperation?.controller.abort(),
+    selectPet: id => { selectedId = id; changed(); save(); } });
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -550,7 +380,8 @@ else {
     if (!argv.includes('--standalone') || modelOperation) openLauncher();
   });
   app.whenReady().then(async () => {
-    prepareDataDirectory();
+    const storage = prepareDataDirectory(app);
+    dataDirectory = storage.directory; storageMode = storage.mode;
     downloads = new DownloadClient(() => proxyUrl);
     library = new ModelLibrary(dataDirectory, downloads);
     // 先恢复更新后的目录，才能识别上次保存的新增干员。
@@ -565,7 +396,7 @@ else {
     refreshDisplays();
     // 启动时先决定初始可见性，避免在已有全屏应用前弹出窗口。
     fullscreenActive = Boolean(surfaces.fullscreenWindow());
-    registerProtocol(); registerIpc();
+    registerProtocol({ protocol, voices, library }); registerIpc();
     const modelArg = process.argv.find(arg => arg.startsWith('--model='))?.slice(8);
     for (const item of saved) addPet(item.modelId, item);
     if (!pets.size) addPet(DEFAULT_MODEL_ID);
@@ -589,7 +420,7 @@ else {
     screen.on('display-added', recover); screen.on('display-removed', recover); screen.on('display-metrics-changed', recover);
     if (surfaces.available) fullscreenTimer = setInterval(checkFullscreen, 1000);
     for (const pet of pets.values()) pet.changed();
-  }).catch(error => { dialog.showErrorBox('ArkPet 启动失败', error.message); app.quit(); });
+  }).catch(error => { dialog.showErrorBox(`${product.name} 启动失败`, error.message); app.quit(); });
   app.on('before-quit', () => {
     quitting = true; setMotionTimerResolution(false); modelOperation?.controller.abort(); aiChats?.closeAll(); clearTimeout(loopTimer); clearTimeout(changeTimer); clearInterval(fullscreenTimer); clearInterval(reminderTimer); saveNow(); globalShortcut.unregisterAll();
     launcherTray?.destroy(); for (const tray of petTrays.values()) tray.destroy(); petTrays.clear();

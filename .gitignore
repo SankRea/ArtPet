@@ -28,6 +28,7 @@ node_modules/
 /settings.json
 /models/
 /voices/
+/ArkPet-data/
 
 # Editor, local tooling and OS files
 .idea/

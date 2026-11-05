@@ -3,3 +3,4 @@
 *.skel -text
 *.png -text
 *.ogg -text
+*.ico -text

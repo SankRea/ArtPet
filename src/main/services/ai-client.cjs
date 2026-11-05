@@ -1,3 +1,4 @@
+const product = require('../../shared/product.cjs');
 const { net } = require('electron');
 const { completionUrl, modelsUrl } = require('./ai-settings-store.cjs');
 
@@ -106,7 +107,7 @@ class AiClient {
   systemPrompt(pet, profile, voiceSamples) {
     const profileText = profile?.text || '本次未能读取 PRTS 干员档案，只能依据干员名称进行克制的非官方角色扮演。';
     const samples = voiceSamples.length ? voiceSamples.map(item => `【${item.label}】${item.text}`).join('\n') : '没有已缓存的语音台词可供参考。';
-    return `你正在 ArkPet 中扮演《明日方舟》干员“${pet.model.name}”，与用户“博士”进行非官方对话。
+    return `你正在 ${product.name} 中扮演《明日方舟》干员“${pet.model.name}”，与用户“博士”进行非官方对话。
 
 要求：
 - 使用简体中文，以第一人称回应，语气自然并尽量贴合干员；通常控制在一至三段。

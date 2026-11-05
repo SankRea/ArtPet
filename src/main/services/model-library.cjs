@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { ROOT } = require('../paths.cjs');
 const { createHash } = require('node:crypto');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
@@ -111,7 +112,7 @@ class ModelLibrary {
     const actual = filename === 'skeleton.json' ? model.skeleton : filename;
     const allowed = this.cached.get(model.id)?.files.map(item => item.file) || [model.skeleton, model.atlas, ...model.textures];
     if (!allowed.includes(actual)) return null;
-    const root = model.bundled ? path.join(__dirname, '..', 'assets', 'surtr') : this.cachePath(model.id);
+    const root = model.bundled ? path.join(ROOT, 'assets', 'surtr') : this.cachePath(model.id);
     return path.join(root, actual);
   }
   async ensure(id, progress, signal) {

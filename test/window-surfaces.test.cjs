@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { WindowSurfaces } = require('../src/window-surfaces.cjs');
+const { WindowSurfaces } = require('../src/main/platform/windows/window-surfaces.cjs');
 
 function fixture(t, windows = {}) {
   let now = 1000, foreground = 1n;

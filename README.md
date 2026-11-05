@@ -2,7 +2,7 @@
 
 基于 Electron、PixiJS 和 Spine 的 Windows 桌面宠物。默认内置**史尔特尔泳装小人（珊瑚海岸/IX）**，支持循环动画、鼠标互动、重力与窗口停靠，以及按需下载其他干员的模型和成对语音记录。
 
-仓库名称为 ArtPet，应用名称及本地数据目录沿用 `ArkPet Surtr`。本项目为非官方作品，与《明日方舟》官方无隶属关系。
+应用名称统一为 **ArtPet**；为兼容已有设置与下载缓存，本地数据目录继续使用旧名称。本项目为非官方作品，与《明日方舟》官方无隶属关系。
 
 ## 鸣谢
 
@@ -17,7 +17,7 @@
 | [pixijs-userland](https://github.com/pixijs-userland) | [spine（pixi-spine）](https://github.com/pixijs-userland/spine) | Spine 模型加载与动画播放 |
 | [Esoteric Software](https://github.com/EsotericSoftware) | [spine-runtimes](https://github.com/EsotericSoftware/spine-runtimes) | pixi-spine 集成的 Spine 运行时代码 |
 | [Koromix](https://github.com/Koromix) | [koffi](https://github.com/Koromix/koffi) | 调用 Windows 窗口接口，实现窗口边沿检测和全屏检测 |
-| [electron-userland](https://github.com/electron-userland) | [electron-builder](https://github.com/electron-userland/electron-builder) | Windows 便携版打包 |
+| [electron-userland](https://github.com/electron-userland) | [electron-builder](https://github.com/electron-userland/electron-builder) | Windows 安装版与便携版打包 |
 
 感谢上海鹰角网络有限公司及《明日方舟》的创作者。角色模型、贴图、游戏语音和台词的版权归原权利人所有。具体来源、缓存记录与组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
@@ -46,6 +46,12 @@
 帧率影响动画和移动的更新频率，不改变动作时长或移动速度。已有的 30／60／120 FPS 设置会保留，旧配置的 15／24 FPS 迁移到 30 FPS，45 FPS 迁移到 60 FPS；没有保存配置时默认使用 60 FPS。实际动画帧率受屏幕刷新率限制，120 FPS 需要 120 Hz 或更高刷新率的显示模式。静态姿势本身没有动画帧；史尔特尔默认使用有时长的 `Relax` 动作循环待机。
 
 ## 安装与启动
+
+普通用户可在 [Releases](https://github.com/SankRea/ArtPet/releases) 中选择 Windows x64 安装版（`setup.exe`）或便携版（`portable.exe`）。发行包包含运行环境，不需要单独安装 Node.js、npm 或 Git。可下载的版本以 Releases 页面为准。
+
+安装版提供安装向导、安装位置选择、快捷方式和卸载入口；便携版直接运行，数据保存在程序旁。覆盖升级前请从托盘退出旧实例；卸载默认保留用户数据。
+
+### 从源码运行
 
 开发运行环境：**Windows 10／11 x64、Node.js 22.12.0 或更新版本、npm 和 Git**。首次安装依赖以及下载未缓存的干员资源需要网络。
 
@@ -125,7 +131,7 @@ PixiJS 固定在 `7.4.3`，与 `pixi-spine 4.0.6` 配套使用。内置模型为
 
 在设置中修改后的值优先于默认配置。达到上限后仍可更换当前干员；降低上限前需先退出多余桌宠。
 
-便携版将设置与下载数据保存在可执行文件同级的 `ArkPet-data\` 目录，可随整个程序文件夹一起移动。源码开发运行使用 `%APPDATA%\ArkPet Surtr\`；如果便携版所在目录不可写，也会回退到这个用户目录。首次使用新版便携存储且目录中没有配置时，程序会读取旧用户目录中的设置并写入新位置。
+便携版将设置与下载数据保存在可执行文件同级的 `ArkPet-data\` 目录，可随整个程序文件夹一起移动。安装版与源码开发运行使用 `%APPDATA%\ArkPet Surtr\`；如果便携版所在目录不可写，也会回退到这个用户目录。ArtPet 保留这些旧目录名称，避免改名后丢失已有设置、缓存和加密配置。首次使用便携存储且目录中没有配置时，程序会读取旧用户目录中的设置并写入新位置。
 
 | 数据目录内路径 | 内容 |
 | --- | --- |
@@ -151,34 +157,55 @@ PixiJS 固定在 `7.4.3`，与 `pixi-spine 4.0.6` 配套使用。内置模型为
 - 全屏判断基于前台窗口几何信息，特殊游戏窗口的兼容性仍需实机确认。
 - 不同模型支持的动作不同，没有对应动画的操作会禁用。
 - Electron 和模型纹理仍有基础内存开销；目前没有 CPU、GPU、内存或耗电实测数据。
-- 当前版本**未编译、未运行测试、未进行实机验证**，不能将静态检查视为运行验证通过。
+- 发布前需检查安装、覆盖升级、中文路径与核心交互，具体项目见[发布说明](docs/releasing.md)。
 
-## 打包 Windows 便携版
+## 打包与发布
 
-安装依赖后执行：
+在 Windows x64 上安装锁定的依赖后，一条命令同时生成安装版与便携版：
 
 ```powershell
+npm ci --include=dev --include=optional
 npm run package:win
 ```
 
-输出位置为 `release/ArkPet-Surtr-<版本号>-portable.exe`，便携版运行时无需单独安装 Node.js。打包目录已加入 `.gitignore`。当前尚未执行打包，也未提供已验证的发行包。
+输出位于 `release/<版本号>/`：
+
+```text
+ArtPet-<版本号>-win-x64-setup.exe
+ArtPet-<版本号>-win-x64-portable.exe
+SHA256SUMS.txt
+```
+
+单独打包可使用 `npm run package:win:installer` 或 `npm run package:win:portable`。打包配置独立保存在 `electron-builder.config.cjs`，保留 EXE 图标和版本信息；当前签名配置为关闭。
+
+推送与 `package.json` 版本一致的 `v<版本号>` 标签后，GitHub Actions 自动构建并上传 **Release 草稿**。也可以在 Actions 中手动运行 **Windows Release**，只生成可下载的构建附件。普通分支推送不会触发发布，已发布的 Release 不会被工作流覆盖。
+
+版本调整、标签发布、失败重试和安装检查见[发布说明](docs/releasing.md)。
 
 ## 项目结构
 
 ```text
-assets/                    干员目录、内置史尔特尔模型、来源和许可
-src/main.cjs               应用入口、设置窗口、托盘与全屏休眠调度
-src/pet-window.cjs         桌宠窗口、交互与自主行为
-src/physics.cjs            重力与移动
-src/window-surfaces.cjs    Windows 窗口边沿及全屏检测
-src/model-library.cjs      模型下载、缓存与校验
-src/voice-library.cjs      PRTS 成对语音记录的下载与缓存
-src/prts-voice-source.cjs  PRTS 页面获取及语音记录解析
-src/voice-caption.cjs      语音对话框及位置同步
+src/main/index.cjs          应用启动、运行状态、托盘与调度
+src/main/windows/          设置、桌宠、AI 对话和字幕窗口
+src/main/services/         配置、模型、语音、AI 与物理逻辑
+src/main/platform/windows/ Windows 窗口检测、计时与自启动
+src/main/ipc/              IPC 注册、来源校验与请求路由
+src/main/protocol.cjs      本地资源协议与路径访问限制
+src/preload/               渲染页面可调用的受限接口
 src/renderer/              设置界面、模型渲染与语音播放
+src/shared/product.cjs     产品信息与兼容标识
+assets/                    内置模型、目录、来源和许可
+build/                     图标与安装资源
+scripts/                   打包、版本校验与校验和生成
+.github/workflows/         Windows 自动构建与 Release 草稿
+docs/                      架构与发布说明
+test/                      现有回归测试
+electron-builder.config.cjs 独立打包配置
 config.json                默认配置
-THIRD_PARTY_NOTICES.md     第三方来源与许可说明
+THIRD_PARTY_NOTICES.md      第三方来源与许可说明
 ```
+
+模块职责与迁移约束见[架构说明](docs/architecture.md)。
 
 ## 许可说明
 

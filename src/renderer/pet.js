@@ -187,6 +187,7 @@ bridge.onMotion(({ walking, direction: nextDirection }) => {
 });
 function applyState(value) {
   prefs = value;
+  hit.classList.toggle('show-focus-outline', value.showFocusOutline === true);
   voicePlayer.configure(value);
   if (!value.visible || value.paused || value.fullscreenSuspended) { clearTimeout(bubbleTimer); bubble.hidden = true; }
   updatePlayback();

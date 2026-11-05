@@ -4,7 +4,7 @@ const { findModel } = require('./models.cjs');
 const { clamp, stepPhysics } = require('./physics.cjs');
 const { VoiceCaption } = require('./voice-caption.cjs');
 
-const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 60, voiceEnabled: false, idleVoiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, reminderEnabled: false, reminderTime: '09:00', reminderClipId: '034', wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, translucent: false, form: null, x: null, y: null };
+const DEFAULTS = { scale: 0.75, speed: 40, frameRate: 60, voiceEnabled: false, idleVoiceEnabled: false, voiceTextEnabled: true, voiceVolume: 0.6, reminderEnabled: false, reminderTime: '09:00', reminderClipId: '034', wander: true, autoActions: true, manualMode: false, gravity: true, windowEdges: true, alwaysOnTop: true, clickThrough: false, showFocusOutline: false, translucent: false, form: null, x: null, y: null };
 const LABELS = { default: '恢复待机', interact: '交互动作', relax: '休息', sit: '坐下', sleep: '睡眠', special: '特殊动作' };
 const IDLE_SLEEP_DELAY = 10 * 60 * 1000;
 const exists = win => win && !win.isDestroyed();

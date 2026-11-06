@@ -78,6 +78,13 @@ class PetWindow {
   send(channel, data) { if (exists(this.win)) this.win.webContents.send(channel, data); }
   form() { return this.model.forms.find(form => form.id === this.settings.form); }
   serialise() { return { id: this.id, modelId: this.model.id, ...this.settings, lastReminderKey: this.lastReminderKey, x: Math.round(this.body.x), y: Math.round(this.body.y) }; }
+  refreshModelMetadata() {
+    const model = findModel(this.model.id);
+    if (!this.model.metadataMissing || !model || model.metadataMissing || model.commit !== this.model.commit) return;
+    this.model = model;
+    if (exists(this.win)) this.win.setTitle(`${model.name} · ${product.name}`);
+    this.changed();
+  }
   state(includeVoice = true) {
     const state = { ...this.serialise(), model: this.model, ready: this.ready, error: this.error, paused: this.paused,
       visible: exists(this.win) && this.win.isVisible(), supportedActions: this.supported, pose: this.pose,

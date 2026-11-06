@@ -20,6 +20,7 @@
       <button type="button" role="tab" aria-selected="false" aria-controls="operator-panel" data-settings-tab="operator">干员管理</button>
       <button type="button" role="tab" aria-selected="false" aria-controls="app-settings-panel" data-settings-tab="app">应用设置</button>
     </nav>
+    <div id="catalog-update-notice" class="download-panel" role="status" hidden><p class="inline-note">干员与时装目录有更新，可前往“干员管理”更新列表。</p><button id="view-catalog-update" type="button">查看目录更新</button></div>
     <p id="operation-message" class="message" role="status"></p>
     <div id="download-panel" class="download-panel" hidden><progress id="download-progress" max="1" value="0"></progress><p id="download-text" class="inline-note"></p><button id="cancel-download" type="button">取消下载</button></div>
     <div id="pet-picker" class="pet-picker" hidden><label for="pet-select">当前控制的桌宠</label><select id="pet-select"></select></div>
@@ -113,7 +114,7 @@
         <select id="model-select" aria-label="选择干员或时装"></select>
         <p id="catalog-info" class="inline-note"></p>
         <div class="utility-bar"><button id="replace-pet" type="button">更换当前干员</button><button id="add-pet" class="primary" type="button">添加桌宠</button></div>
-        <p class="inline-note">模型来自 Ark-Models，可手动检查并拉取目录更新；模型文件按选择下载，已下载模型继续复用。对应语音与文字从 PRTS Wiki 的同一条记录下载。已缓存的资源可离线使用。</p>
+        <p class="inline-note">模型来自 Ark-Models，每次启动会后台检查目录更新，首次使用会自动获取目录。模型文件按选择下载，已下载模型继续复用；断网时使用本地缓存。对应语音与文字从 PRTS Wiki 的同一条记录下载。</p>
       </section>
     </div>
 

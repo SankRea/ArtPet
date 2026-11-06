@@ -42,9 +42,10 @@ class AiChatWindows {
   state(pet) {
     if (!pet) return null;
     const settings = this.host.settings.state();
-    return { ready: settings.ready, name: pet.model.name, modelId: pet.model.id,
-      messages: this.host.client.messages(pet), source: sourceUrl(pet.model.name),
-      status: settings.ready ? `使用 ${settings.model} · 对话记录仅保留到本次运行结束` : 'AI 对话配置当前不可用。' };
+    return { ready: settings.ready && !pet.model.metadataMissing, name: pet.model.name, modelId: pet.model.id,
+      messages: this.host.client.messages(pet), source: pet.model.metadataMissing ? null : sourceUrl(pet.model.name),
+      status: pet.model.metadataMissing ? '请先在“干员管理”中获取目录，补全当前干员名称后再对话。'
+        : settings.ready ? `使用 ${settings.model} · 对话记录仅保留到本次运行结束` : 'AI 对话配置当前不可用。' };
   }
   register(ipcMain) {
     ipcMain.handle('ai-chat:get-state', event => this.state(this.pet(event)));
@@ -62,7 +63,7 @@ class AiChatWindows {
     });
     ipcMain.on('ai-chat:open-source', event => {
       const pet = this.pet(event);
-      if (pet) shell.openExternal(sourceUrl(pet.model.name)).catch(() => {});
+      if (pet && !pet.model.metadataMissing) shell.openExternal(sourceUrl(pet.model.name)).catch(() => {});
     });
   }
   refresh() {

@@ -6,12 +6,15 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
 const test = require('node:test');
-const { DEFAULT_MODEL_ID, MODELS, findModel } = require('../src/main/services/models.cjs');
+const { DEFAULT_MODEL_ID, bundledModel, modelEntry, parseCatalog, setModels, findModel } = require('../src/main/services/models.cjs');
 const proxyHelpers = require('../src/main/services/download-client.cjs');
 
 const mainPath = path.join(__dirname, '../src/main/index.cjs');
 const mainSource = fs.readFileSync(mainPath, 'utf8');
-const otherModelId = MODELS.find(model => !model.bundled).id;
+const otherModelId = 'test_operator';
+setModels(parseCatalog({ commit: bundledModel.commit, entries: [
+  { ...modelEntry(bundledModel), id: otherModelId, name: '测试干员' }
+] }));
 const originalPet = {
   id: 'saved-pet', modelId: DEFAULT_MODEL_ID, scale: 1.15, frameRate: 120,
   speed: 32, voiceEnabled: true, voiceVolume: 0.35, voiceTextEnabled: false,

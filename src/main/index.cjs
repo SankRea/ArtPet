@@ -1,4 +1,4 @@
-const { app, Menu, Tray, ipcMain, protocol, screen, globalShortcut, dialog, shell } = require('electron');
+const { app, Menu, Tray, Notification, ipcMain, protocol, screen, globalShortcut, dialog, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -35,6 +35,7 @@ let aiSettings, profiles, aiClient, aiChats;
 let environment, loopRunning = false, nextSurfaceScan = 0, launcherCatalogRevision = -1, lastSavedText;
 let dataDirectory, storageMode = 'system', lastClosedPet = null;
 let fullscreenActive = false;
+let startupCatalogPending = false, catalogNotification, notifiedCatalogCommit = '';
 const exists = win => win && !win.isDestroyed();
 protocol.registerSchemesAsPrivileged([{ scheme: 'arkpet', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 // Keep the established data location when changing the public product name.
@@ -58,7 +59,27 @@ function notifyLauncher() { if (launcherVisible()) launcher.webContents.send('la
 function changed() {
   wakeLoop();
   if (quitting || changeTimer) return;
-  changeTimer = setTimeout(() => { changeTimer = null; notifyLauncher(); syncTrays(); }, 80);
+  changeTimer = setTimeout(() => {
+    changeTimer = null; notifyLauncher(); syncTrays(); notifyCatalogUpdate();
+    // 与手动下载共用串行任务，避免目录替换改变正在下载的模型路径。
+    if (startupCatalogPending && !modelOperation) {
+      startupCatalogPending = false;
+      void updateModelCatalog('check', true);
+    }
+  }, 80);
+}
+function notifyCatalogUpdate() {
+  const update = library.updateState();
+  if (!update.initialized || !update.available || update.latestCommit === notifiedCatalogCommit || fullscreenActive) return;
+  notifiedCatalogCommit = update.latestCommit;
+  if (launcherVisible() || !Notification.isSupported()) return;
+  try {
+    catalogNotification?.close();
+    catalogNotification = new Notification({ title: product.name, body: '干员与时装目录有更新，打开设置中的“干员管理”即可查看。', silent: true, icon: makeIcon() });
+    catalogNotification.on('click', () => { if (!quitting) openLauncher(); });
+    catalogNotification.on('failed', (_event, error) => console.warn(`模型目录更新通知未显示：${error}`));
+    catalogNotification.show();
+  } catch (error) { console.warn(`模型目录更新通知未显示：${error.message}`); }
 }
 function wakeLoop() {
   if (quitting || loopRunning || fullscreenActive) return;
@@ -207,19 +228,28 @@ async function downloadVoice(id) {
     if (!quitting) { for (const current of pets.values()) current.changed(); changed(); }
   }
 }
-async function updateModelCatalog(action) {
+async function updateModelCatalog(action, startup = false) {
   if (!['check', 'pull'].includes(action)) return { ok: false, error: '目录更新请求无效。' };
   if (modelOperation) return { ok: false, error: '正在处理其他资源，请等待完成或取消。' };
+  startupCatalogPending = false;
   const controller = new AbortController();
   modelOperation = { mode: `catalog-${action}`, name: action === 'check' ? '检查模型目录更新' : '拉取模型目录更新', controller, progress: null };
   changed();
   let result;
   try {
-    const message = action === 'check' ? await library.checkForUpdates(downloadProgress, controller.signal) : await library.pullUpdates(downloadProgress, controller.signal);
+    let message = action === 'check' ? await library.checkForUpdates(downloadProgress, controller.signal) : await library.pullUpdates(downloadProgress, controller.signal);
+    controller.signal.throwIfAborted();
+    if (action === 'check' && !library.hasCatalog) {
+      modelOperation.name = '首次获取模型目录'; changed();
+      message = await library.pullUpdates(downloadProgress, controller.signal);
+    }
+    for (const pet of pets.values()) pet.refreshModelMetadata();
+    aiChats?.refresh();
+    if (!library.updateState().available) catalogNotification?.close();
     result = { ok: true, warning: message };
   } catch (error) {
-    const message = controller.signal.aborted ? '目录更新操作已取消。' : `模型目录更新失败：${error.message}`;
-    if (!controller.signal.aborted) library.catalogError = message;
+    const message = controller.signal.aborted ? '目录更新操作已取消，可手动重试。' : `${startup ? '启动时检查目录失败，仍可使用本地模型' : '模型目录更新失败'}：${error.message}`;
+    library.catalogError = message;
     result = { ok: false, error: message };
   } finally { modelOperation = null; if (!quitting) changed(); }
   if (!quitting) notifyLauncher();
@@ -227,8 +257,15 @@ async function updateModelCatalog(action) {
 }
 async function selectModel({ mode, modelId, id }) {
   if (modelOperation) return { ok: false, error: '正在下载或更换干员，请等待完成或取消。' };
+  if (!['add', 'replace'].includes(mode)) return { ok: false, error: '请选择列表中的干员。' };
+  // 首次使用 --model 启动时，也要先获取目录再解析目标模型。
+  if (!findModel(modelId) && !library.hasCatalog) {
+    const result = await updateModelCatalog('check', true);
+    if (!result.ok) return result;
+    if (quitting) return { ok: false, error: '程序正在退出。' };
+  }
   const model = findModel(modelId);
-  if (!model || !['add', 'replace'].includes(mode)) return { ok: false, error: '请选择列表中的干员。' };
+  if (!model) return { ok: false, error: '请选择列表中的干员。' };
   if (mode === 'add' && pets.size >= maxPets) return { ok: false, error: `已达到 ${maxPets} 个桌宠的上限，可更换当前干员或调整数量上限。` };
   if (mode === 'replace' && !pets.has(id)) return { ok: false, error: '当前桌宠已退出，请重新选择。' };
   const controller = new AbortController();
@@ -329,13 +366,15 @@ function openLauncher(id) {
 }
 function syncTrays() {
   if (quitting) return;
+  const updateHint = library.updateState().available ? ' · 干员目录有更新' : '';
   if (exists(launcher)) {
     for (const tray of petTrays.values()) tray.destroy();
     petTrays.clear();
     if (!launcherTray) {
-      launcherTray = new Tray(makeIcon()); launcherTray.setToolTip(`${product.name} · 设置`);
+      launcherTray = new Tray(makeIcon());
       launcherTray.on('double-click', () => openLauncher());
     }
+    launcherTray.setToolTip(`${product.name} · 设置${updateHint}`);
     launcherTray.setContextMenu(Menu.buildFromTemplate([
       { label: '打开设置', click: () => openLauncher() },
       { label: '选择 / 更换干员', click: () => openLauncher() },
@@ -354,7 +393,7 @@ function syncTrays() {
         tray = new Tray(makeIcon());
         tray.on('double-click', () => openLauncher(pet.id)); petTrays.set(pet.id, tray);
       }
-      tray.setToolTip(`${product.name} · ${pet.model.name}`);
+      tray.setToolTip(`${product.name} · ${pet.model.name}${updateHint}`);
       tray.setContextMenu(Menu.buildFromTemplate(pet.menu()));
     }
   }
@@ -403,6 +442,7 @@ else {
     reminderTimer = setInterval(checkReminders, 1000);
     if (!modelArg && pets.has(previousSelection)) selectedId = previousSelection;
     if (!process.argv.includes('--standalone') && !fullscreenActive) openLauncher();
+    startupCatalogPending = true;
     if (modelArg) selectModel({ mode: 'replace', modelId: modelArg, id: selectedId }).then(result => { if (!result.ok && !quitting) dialog.showErrorBox('无法选择干员', result.error); });
     shortcutStatus.visibility = globalShortcut.register('CommandOrControl+Alt+S', () => {
       const show = [...pets.values()].some(pet => pet.userHidden);
@@ -420,8 +460,10 @@ else {
     screen.on('display-added', recover); screen.on('display-removed', recover); screen.on('display-metrics-changed', recover);
     if (surfaces.available) fullscreenTimer = setInterval(checkFullscreen, 1000);
     for (const pet of pets.values()) pet.changed();
+    changed();
   }).catch(error => { dialog.showErrorBox(`${product.name} 启动失败`, error.message); app.quit(); });
   app.on('before-quit', () => {
+    startupCatalogPending = false; catalogNotification?.close();
     quitting = true; setMotionTimerResolution(false); modelOperation?.controller.abort(); aiChats?.closeAll(); clearTimeout(loopTimer); clearTimeout(changeTimer); clearInterval(fullscreenTimer); clearInterval(reminderTimer); saveNow(); globalShortcut.unregisterAll();
     launcherTray?.destroy(); for (const tray of petTrays.values()) tray.destroy(); petTrays.clear();
   });

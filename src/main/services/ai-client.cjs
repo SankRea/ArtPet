@@ -124,6 +124,7 @@ ${samples}
 </已缓存台词示例>`;
   }
   async chat(pet, value) {
+    if (pet.model.metadataMissing) throw new Error('请先在“干员管理”中获取目录，补全当前干员名称后再对话。');
     const message = typeof value === 'string' ? value.trim() : '';
     if (!message) throw new Error('请输入消息。');
     if (message.length > MAX_USER_CHARS) throw new Error(`消息不能超过 ${MAX_USER_CHARS} 个字符。`);

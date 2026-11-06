@@ -41,9 +41,9 @@ class VoiceLibrary {
   }
   find(modelId) {
     const model = findModel(modelId);
-    return model ? { id: this.id(model.name), operatorName: model.name } : null;
+    return model && !model.metadataMissing ? { id: this.id(model.name), operatorName: model.name } : null;
   }
-  textSource(modelId) { const model = findModel(modelId); return model ? sourceUrl(model.name) : null; }
+  textSource(modelId) { const entry = this.find(modelId); return entry ? sourceUrl(entry.operatorName) : null; }
   clearRequests() { this.source.clear(); }
   invalidate(modelId) {
     const entry = this.find(modelId);

@@ -1,5 +1,6 @@
-const bundledCatalog = require('../../../assets/operators.json');
-const DEFAULT_MODEL_ID = '350_surtr_summer#9';
+const bundledSource = require('../../../assets/surtr/source.json');
+const DEFAULT_MODEL_ID = bundledSource.modelId;
+const UPSTREAM_REPOSITORY = bundledSource.repository;
 const ACTION_CANDIDATES = {
   default: ['Relax', 'Idle', 'Stand', 'Default'], move: ['Move', 'Move_Loop', 'Walk'],
   interact: ['Interact', 'Touch'], relax: ['Relax'], sit: ['Sit'], sleep: ['Sleep'], special: ['Special']
@@ -22,11 +23,38 @@ function modelFromEntry(entry, commit) {
     id: entry.id, name: entry.name, appellation: entry.appellation || '', subtitle: entry.outfit || '默认服装', type: 'operator',
     sourceFolder: entry.id, skeleton, atlas, textures, commit,
     assetBase: `arkpet://app/models/${encodeURIComponent(entry.id)}/`,
-    bundled: entry.id === DEFAULT_MODEL_ID,
+    bundled: entry.id === DEFAULT_MODEL_ID, metadataMissing: entry.metadataMissing === true,
     forms: [{ id: 'default', name: entry.outfit || '默认服装', animations: ACTION_CANDIDATES }]
   };
 }
-const bundledModel = modelFromEntry(bundledCatalog.entries.find(entry => entry.id === DEFAULT_MODEL_ID), bundledCatalog.commit);
+const bundledModel = modelFromEntry({
+  id: DEFAULT_MODEL_ID, name: bundledSource.name, appellation: bundledSource.appellation, outfit: bundledSource.outfit,
+  files: {
+    '.skel': bundledSource.files.find(file => file.file.endsWith('.skel')).file,
+    '.atlas': bundledSource.files.find(file => file.file.endsWith('.atlas')).file,
+    '.png': bundledSource.files.filter(file => file.file.endsWith('.png')).map(file => file.file)
+  }
+}, bundledSource.commit);
+function modelEntry(model) {
+  return { id: model.id, name: model.name, appellation: model.appellation, outfit: model.subtitle,
+    commit: model.commit, metadataMissing: model.metadataMissing,
+    files: { [model.skeleton.endsWith('.json') ? '.json' : '.skel']: model.skeleton, '.atlas': model.atlas, '.png': model.textures } };
+}
+function cachedModel(record, knownModel) {
+  const names = record.files.map(file => file.file);
+  const atlas = names.filter(file => /\.atlas$/i.test(file));
+  const skeleton = names.filter(file => !/\.(atlas|png)$/i.test(file));
+  if (atlas.length !== 1 || skeleton.length !== 1) throw new Error('缓存模型的骨骼或图集信息不完整。');
+  // 旧缓存只有 ID 和文件记录；没有目录时先恢复模型，联网后再补齐名称。
+  const metadata = knownModel && !knownModel.metadataMissing ? modelEntry(knownModel) : record.entry;
+  if (metadata && metadata.id !== record.modelId) throw new Error('缓存模型信息与 ID 不一致。');
+  return modelFromEntry({
+    id: record.modelId, name: metadata?.name || record.modelId,
+    appellation: metadata?.appellation || '', outfit: metadata?.outfit || '已缓存模型',
+    metadataMissing: !metadata || metadata.metadataMissing === true,
+    files: { '.skel': skeleton[0], '.atlas': atlas[0], '.png': names.filter(file => /\.png$/i.test(file)) }
+  }, record.commit);
+}
 function parseCatalog(catalog) {
   if (!catalog || !validCommit(catalog.commit) || !Array.isArray(catalog.entries) || !catalog.entries.length || catalog.entries.length > 10000) throw new Error('模型目录格式无效。');
   const models = catalog.entries.map(entry => modelFromEntry(entry, entry?.commit ?? catalog.commit));
@@ -40,16 +68,16 @@ function upstreamCatalog(data, commit) {
   const entries = Object.entries(data.data).filter(([, entry]) => entry?.type === 'Operator').map(([id, entry]) => ({
     id, name: entry.name, appellation: entry.appellation, outfit: entry.skinGroupName, files: entry.assetList
   }));
-  const catalog = { repository: bundledCatalog.repository, commit, entries };
+  const catalog = { repository: UPSTREAM_REPOSITORY, commit, entries };
   parseCatalog(catalog);
   return catalog;
 }
-const MODELS = parseCatalog(bundledCatalog);
+const MODELS = [bundledModel];
 const byId = new Map(MODELS.map(model => [model.id, model]));
 function setModels(models) {
   MODELS.splice(0, MODELS.length, ...models);
   byId.clear();
   for (const model of models) byId.set(model.id, model);
 }
-module.exports = { MODELS, DEFAULT_MODEL_ID, bundledCatalog, validCommit, parseCatalog, upstreamCatalog, setModels, safeFile,
+module.exports = { MODELS, DEFAULT_MODEL_ID, UPSTREAM_REPOSITORY, bundledModel, modelEntry, cachedModel, validCommit, parseCatalog, upstreamCatalog, setModels, safeFile,
   findModel: id => byId.get(id === 'surtr' ? DEFAULT_MODEL_ID : id) };

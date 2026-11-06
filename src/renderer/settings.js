@@ -132,7 +132,7 @@ function render(data) {
       search: `${model.name} ${model.appellation} ${model.subtitle}`.toLocaleLowerCase(), cached: model.cached, order }))
       .sort((a, b) => Number(b.cached) - Number(a.cached) || a.order - b.order);
   }
-  const signature = data.pets.map(pet => `${pet.id}:${pet.model.id}`).join(',');
+  const signature = data.pets.map(pet => `${pet.id}:${pet.model.id}:${pet.model.name}`).join(',');
   if (signature !== petListSignature) {
     options(byId('pet-select'), data.pets.map((pet, index) => ({ value: pet.id, label: `${index + 1}. ${pet.model.name}` })));
     petListSignature = signature;
@@ -145,12 +145,16 @@ function render(data) {
   if (document.activeElement !== byId('proxy-port')) byId('proxy-port').value = data.proxyPort || '';
   renderAi(data.ai);
   const catalogUpdate = data.catalogUpdate;
+  const checkingCatalog = data.operation?.mode.startsWith('catalog-');
+  byId('catalog-update-notice').hidden = !catalogUpdate?.available || (!catalogUpdate.initialized && checkingCatalog);
   if (catalogUpdate) {
-    const version = catalogUpdate.commit.slice(0, 7);
-    const status = catalogUpdate.available ? `发现新版本 ${catalogUpdate.latestCommit.slice(0, 7)}，可拉取更新。`
-      : catalogUpdate.checkedAt ? '模型目录已是最新版本。' : '点击“检查更新”获取上游最新版本。';
+    const version = catalogUpdate.initialized ? `当前目录 ${catalogUpdate.commit.slice(0, 7)}` : '当前仅使用内置及已下载模型';
+    const status = checkingCatalog ? data.operation.name + '…'
+      : catalogUpdate.available ? `发现新版本 ${catalogUpdate.latestCommit.slice(0, 7)}，可拉取更新。`
+      : catalogUpdate.checkedAt && catalogUpdate.initialized ? '模型目录已是最新版本。' : '启动时自动检查，也可点击“检查更新”重试。';
     const checked = catalogUpdate.checkedAt ? ` · 上次检查：${new Date(catalogUpdate.checkedAt).toLocaleString('zh-CN')}` : '';
-    byId('catalog-update-status').textContent = `当前目录 ${version} · ${catalogUpdate.error || status}${checked}`;
+    byId('catalog-update-status').textContent = `${version} · ${checkingCatalog ? status : catalogUpdate.error || status}${checked}`;
+    byId('pull-catalog-update').textContent = catalogUpdate.initialized ? '拉取更新' : '获取目录';
   }
   const autoStart = data.autoStart || { available: false, enabled: false, registered: false, error: '无法读取开机自动启动状态。' };
   byId('autoStart').checked = autoStart.enabled;
@@ -258,6 +262,7 @@ byId('model-search').addEventListener('input', () => { clearTimeout(searchTimer)
 byId('model-select').addEventListener('change', updateButtons);
 byId('add-pet').addEventListener('click', () => request(() => bridge.addPet(byId('model-select').value), '已添加桌宠。'));
 byId('replace-pet').addEventListener('click', () => request(() => bridge.replacePet(byId('model-select').value, selectedId), '已切换干员。'));
+byId('view-catalog-update').addEventListener('click', () => selectSettingsTab('operator', true));
 for (const [id, action] of [['check-catalog-update', 'check'], ['pull-catalog-update', 'pull']]) {
   byId(id).addEventListener('click', () => request(async () => {
     const result = await bridge.updateModelCatalog(action);

@@ -26,6 +26,7 @@ function render(next) {
   byId('status').textContent = state.status || '';
   byId('chat-input').disabled = busy || !state.ready;
   byId('send-message').disabled = busy || !state.ready;
+  byId('open-source').disabled = !state.source;
   byId('clear-chat').disabled = busy || !state.messages.length;
   renderMessages(busy);
 }

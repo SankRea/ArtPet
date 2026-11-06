@@ -4,7 +4,7 @@ const { ROOT } = require('../paths.cjs');
 const { createHash } = require('node:crypto');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
-const { MODELS, DEFAULT_MODEL_ID, bundledCatalog, validCommit, parseCatalog, upstreamCatalog, setModels, findModel, safeFile } = require('./models.cjs');
+const { MODELS, DEFAULT_MODEL_ID, UPSTREAM_REPOSITORY, bundledModel, modelEntry, cachedModel, validCommit, parseCatalog, upstreamCatalog, setModels, findModel, safeFile } = require('./models.cjs');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 async function hashFile(filename, signal) {
   const digest = createHash('sha256');
@@ -19,33 +19,46 @@ class ModelLibrary {
     this.cached = new Map();
     this.revision = 0; this.catalog = null;
     this.catalogPath = path.join(userData, 'model-catalog.json');
-    this.snapshot = bundledCatalog;
+    this.snapshot = { repository: UPSTREAM_REPOSITORY, commit: bundledModel.commit, entries: [modelEntry(bundledModel)] };
+    this.hasCatalog = false;
+    setModels([bundledModel]);
     this.latestCommit = ''; this.checkedAt = ''; this.catalogError = '';
     try {
       const snapshot = JSON.parse(fs.readFileSync(this.catalogPath, 'utf8'));
       const models = parseCatalog(snapshot);
-      this.snapshot = snapshot; setModels(models);
+      this.snapshot = snapshot; this.hasCatalog = true; setModels(models);
     } catch (error) {
       if (error.code !== 'ENOENT') {
-        this.catalogError = `本地更新目录无法读取，暂用内置目录：${error.message}`;
+        this.catalogError = `本地目录缓存无法读取，暂用内置及已下载模型：${error.message}`;
         console.warn(this.catalogError);
       }
     }
     let directories;
     try { directories = fs.readdirSync(this.root, { withFileTypes: true }).filter(item => item.isDirectory() && !item.name.startsWith('.')); } catch { directories = []; }
+    const knownModels = new Map(MODELS.map(model => [model.id, model]));
+    const recovered = new Map(knownModels);
     for (const entry of directories) {
       const directory = path.join(this.root, entry.name);
       try {
         const record = JSON.parse(fs.readFileSync(path.join(directory, 'source.json'), 'utf8'));
-        const model = findModel(record.modelId);
-        if (model && !model.bundled && directory === this.cachePath(model.id) && record.commit === model.commit && Array.isArray(record.files) && record.files.length >= 3
-          && record.files.every(item => safeFile(item.file) && fs.statSync(path.join(directory, item.file)).size === item.bytes)) this.cached.set(model.id, record);
+        if (!record || record.modelId === DEFAULT_MODEL_ID || !validCommit(record.commit)
+          || directory !== path.join(this.root, hash(`${record.commit}:${record.modelId}`).slice(0, 24))
+          || !Array.isArray(record.files) || record.files.length < 3
+          || !record.files.every(item => item && safeFile(item.file) && Number.isInteger(item.bytes) && item.bytes > 0
+            && /^[a-f\d]{64}$/.test(item.sha256) && fs.statSync(path.join(directory, item.file)).size === item.bytes)) continue;
+        const known = knownModels.get(record.modelId);
+        const model = cachedModel(record, known);
+        if (this.cached.has(model.id) && known?.commit !== record.commit) continue;
+        this.cached.set(model.id, { ...record, entry: modelEntry(model) });
+        recovered.set(model.id, model);
       } catch { /* Missing or incomplete cache: offer download on selection. */ }
     }
+    this.snapshot = { ...this.snapshot, entries: [...recovered.values()].map(modelEntry) };
+    setModels(parseCatalog(this.snapshot));
   }
   updateState() {
-    return { commit: this.snapshot.commit, latestCommit: this.latestCommit, checkedAt: this.checkedAt,
-      available: Boolean(this.latestCommit && this.latestCommit !== this.snapshot.commit), error: this.catalogError };
+    return { initialized: this.hasCatalog, commit: this.hasCatalog ? this.snapshot.commit : '', latestCommit: this.latestCommit, checkedAt: this.checkedAt,
+      available: Boolean(this.latestCommit && (!this.hasCatalog || this.latestCommit !== this.snapshot.commit)), error: this.catalogError };
   }
   async fetchCatalogJson(url, file, progress, signal, limit = 8 * 1024 * 1024) {
     const report = (received = 0, expected = 0, proxied = false) => progress({ phase: '目录', file, index: 0, total: 1, received, expected, proxied });
@@ -68,23 +81,30 @@ class ModelLibrary {
     });
   }
   async checkForUpdates(progress, signal) {
-    const reference = await this.fetchCatalogJson('https://api.github.com/repos/isHarryh/Ark-Models/git/ref/heads/main', '上游版本', progress, signal, 64 * 1024);
-    const commit = reference?.object?.sha;
-    if (reference?.ref !== 'refs/heads/main' || reference?.object?.type !== 'commit' || !validCommit(commit)) throw new Error('上游返回的模型目录版本无效。');
+    const history = await this.fetchCatalogJson('https://api.github.com/repos/isHarryh/Ark-Models/commits?sha=main&path=models_data.json&per_page=1', '目录版本', progress, signal, 64 * 1024);
+    const commit = Array.isArray(history) ? history[0]?.sha : null;
+    if (!validCommit(commit)) throw new Error('上游返回的模型目录版本无效。');
     signal?.throwIfAborted();
     this.latestCommit = commit; this.checkedAt = new Date().toISOString(); this.catalogError = '';
-    return commit === this.snapshot.commit ? '当前模型目录已是最新版本。' : '发现模型目录更新，点击“拉取更新”即可更新列表。';
+    return !this.updateState().available ? '当前模型目录已是最新版本。' : '发现模型目录更新，点击“拉取更新”即可更新列表。';
   }
   async pullUpdates(progress, signal) {
     const commit = this.latestCommit;
-    if (!validCommit(commit) || commit === this.snapshot.commit) throw new Error('请先检查模型目录更新。');
+    if (!validCommit(commit) || !this.updateState().available) throw new Error('请先检查模型目录更新。');
     const data = await this.fetchCatalogJson(`https://raw.githubusercontent.com/isHarryh/Ark-Models/${commit}/models_data.json`, 'models_data.json', progress, signal);
     const snapshot = upstreamCatalog(data, commit);
     const entries = new Map(snapshot.entries.map(entry => [entry.id, entry]));
     // 缓存继续使用下载时的文件名与提交，避免目录更新使离线模型失效。
-    for (const entry of this.snapshot.entries) {
-      if (entry.id === DEFAULT_MODEL_ID || this.cached.has(entry.id)) entries.set(entry.id, { ...entry, commit: entry.commit || this.snapshot.commit });
+    const nextCached = new Map(this.cached);
+    for (const [id, record] of this.cached) {
+      const remoteEntry = entries.get(id);
+      const entry = record.entry.metadataMissing && remoteEntry
+        ? { ...record.entry, name: remoteEntry.name, appellation: remoteEntry.appellation, outfit: remoteEntry.outfit, metadataMissing: false }
+        : record.entry;
+      entries.set(id, entry);
+      nextCached.set(id, { ...record, entry });
     }
+    entries.set(DEFAULT_MODEL_ID, modelEntry(bundledModel));
     snapshot.entries = [...entries.values()];
     const models = parseCatalog(snapshot);
     const added = models.filter(model => !findModel(model.id)).length;
@@ -96,7 +116,7 @@ class ModelLibrary {
       signal?.throwIfAborted();
       await fs.promises.rename(temporary, this.catalogPath);
     } finally { await fs.promises.rm(temporary, { force: true }); }
-    this.snapshot = snapshot; setModels(models);
+    this.snapshot = snapshot; this.hasCatalog = true; this.cached = nextCached; setModels(models);
     this.catalog = null; this.revision++; this.catalogError = '';
     return `模型目录已更新，新增 ${added} 个条目，当前共 ${models.length} 个干员与时装条目。`;
   }
@@ -180,7 +200,7 @@ class ModelLibrary {
         progress({ file, index: index + 1, total: files.length, received: 0, expected: 0 });
       }
       signal?.throwIfAborted();
-      const record = { modelId: model.id, commit: model.commit, repository: 'https://github.com/isHarryh/Ark-Models', files: records };
+      const record = { modelId: model.id, commit: model.commit, repository: UPSTREAM_REPOSITORY, entry: modelEntry(model), files: records };
       await fs.promises.writeFile(path.join(temporary, 'source.json'), JSON.stringify(record, null, 2));
       const destination = this.cachePath(model.id);
       await removeCacheDirectory(destination);

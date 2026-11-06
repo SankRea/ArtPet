@@ -20,7 +20,7 @@ function releaseMetadata(tag) {
     if (Object.keys(declared).length !== Object.keys(locked).length
       || Object.keys(declared).some(key => declared[key] !== locked[key])) throw new Error(`${section} 与锁文件不一致，请先同步依赖。`);
   }
-  for (const file of [manifest.main, 'config.json', 'build/icon.ico', 'build/icon.png', 'assets/operators.json', 'THIRD_PARTY_NOTICES.md']) {
+  for (const file of [manifest.main, 'config.json', 'build/icon.ico', 'build/icon.png', 'assets/surtr/source.json', 'THIRD_PARTY_NOTICES.md']) {
     if (!fs.statSync(path.join(ROOT, file)).isFile()) throw new Error(`缺少发布文件：${file}`);
   }
   return {
